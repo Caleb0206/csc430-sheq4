@@ -7,13 +7,24 @@
 
 
 ;; Data definitions
-(define-type Value (U ExprC FundefC))
 
+;; Value - Numbers and Booleans
+(define-type Value (U Real Boolean CloV))
+
+;; Closure
+(struct CloV ([params : (Listof Symbol)] [body : ExprC] [env : Env]) #:transparent)
+
+;; Lambda
+(struct LamC ([args : (Listof Symbol)] [body : ExprC]) #:transparent)
+
+;; Binding : pair of a Symbol and a Value
 (struct Binding ([name : Symbol] [val : Value]) #:transparent)
+
+;; Env : a list of Bindings
 (define-type Env (Listof Binding))
 
 ;; ExprC type : NumC, BinOpC, IfC, IdC, AppC
-(define-type ExprC (U NumC BinOpC IfC IdC AppC))
+(define-type ExprC (U NumC BinOpC IfC IdC AppC LamC))
 
 ;; NumC : a Real
 (struct NumC ([n : Real]) #:transparent)
@@ -28,10 +39,16 @@
 (struct IfC ([v : ExprC] [iftrue : ExprC] [iffalse : ExprC]) #:transparent)
 
 ;; AppC : a name (symbol) with a list of ExprC's
-(struct AppC ([name : Symbol] [args : (Listof ExprC)]) #:transparent)
+(struct AppC ([lam : LamC] [args : (Listof ExprC)]) #:transparent)
 
 ;; FundefC : a function definition
 (struct FundefC ([name : Symbol] [args : (Listof Symbol)] [body : ExprC]) #:transparent)
+
+;; Top level environment
+(: top-env Env)
+(define top-env (list
+                 (Binding 'true #t)
+                 (Binding 'false #f)))
 
 ;; ---- Keywords & Internal Functions
 ;; Binary Ops - a hash table of the binary operations
@@ -47,12 +64,39 @@
 ;; ---- Interpreters ----
 
 ;; top-interp - called to parse and evaluate the S-exp, return Real
-(define (top-interp [s : Sexp]) : Real
-  (interp-fns (parse-prog s)))
+(define (top-interp [s : Sexp]) : String
+  (serialize (interp (parse s) top-env)))
 
+;; num-value - takes a Value, if Real, returns Real
+(define (num-value [v : Value]) : Real
+  (if (real? v) v
+      (error "SHEQ: Expected a Real, got ~a" v)))
+
+(check-equal? (num-value 8) 8)
+(check-exn #rx"SHEQ: Expected a" (lambda () (num-value #f)))
+
+;; serialize
+(define (serialize [v : Value]) : String
+  (match v
+    [(? real? r) (~v r)]
+    [(? boolean? b) (if b
+                        "true"
+                        "false")]
+    [(CloV _ _ _) "#<procedure>"]))
+
+(check-equal? (serialize '32) "32")
+(check-equal? (serialize #f) "false")
+(check-equal? (serialize #t) "true")
+
+;;
+(define (interp-args [args : (Listof ExprC)] [env : Env] [bindings : (Listof Binding)]) : (Listof Binding)
+  (match args
+    ['() '()]
+    [(cons arg r) (cons (Binding arg (interp arg)))]
+    [_ (error 'interp-args "SHEQ: idk yet")]))
 
 ;; interp - takes the complete AST (ExprC) with a list of FundefC, returning a Real
-(define (interp [e : ExprC] [env : Env]) : Real
+(define (interp [e : ExprC] [env : Env]) : Value
   ; template
   #;(match e
       [numc -> number]
@@ -64,18 +108,16 @@
   ; body
   (match e
     [(NumC n) n]
-    [(IfC v l r) (if (<= (interp v env) 0) (interp l env) (interp r env))]
+    [(IfC v l r) (if (<= (num-value (interp v env)) 0) (interp l env) (interp r env))]
     [(BinOpC s l r) (interp-bin-op s l r env)]
-    [(AppC id args) (define func (get-binding-val id env))
-                    ;; Todo, change to work with lamC
-                    (if (FundefC? func)
-                        (interp (FundefC-body func)
-                                (create-env (FundefC-args func) args env))
-                        (error 'interp "SHEQ: Attempted to call non-function value, value ~a" id))]
+    [(AppC lam args) (define f-val (interp lam env))
+                     (define arg-vals (interp-args args))
+                     ;; FIX NOW :(
+                     ()]
     [(IdC id) (define val (get-binding-val id env))
               (if (FundefC? val)
                   (error 'interp "SHEQ: Cannot use Fundef as Id, got ~a" val)
-                  (interp val env))]))
+                  val)]))
 
 ;; get-binding-val takes a symbol and enviornment, performs a lookup and returns an ExprC if found
 (define (get-binding-val [s : Symbol] [env : Env]) : Value
@@ -86,30 +128,31 @@
          val
          (get-binding-val s r))]))
 
-(check-equal? (get-binding-val 'sym (list (Binding 'sym (NumC 5)))) (NumC 5))
+(check-equal? (get-binding-val 'sym (list (Binding 'sym 5))) 5)
 (check-exn #rx"SHEQ: An unbound identifier" (lambda () (get-binding-val 'sym '())))
 
 
 
 
 ;; interp-bin-op - takes a binary operator symbol, ExprC left and right, list of FundefC, to return a Real
-(define (interp-bin-op [s : Symbol] [l : ExprC] [r : ExprC] [env : Env]) : Real
+(define (interp-bin-op [s : Symbol] [l : ExprC] [r : ExprC] [env : Env]) : Value
   ; retrieve function from hashtable
   (define func (hash-ref bin-ops s))
+  (define interped-r (num-value (interp r env)))
+  (define interped-l (num-value (interp l env)))
   ; check division for divide by zero
-  (cond
+  (cond 
     [(eq? s '/)
      ; preemptively interpret right side for potential 0
-     (define interped-r (interp r env))
      ; if right is 0, throw a divide by 0 error
      (if (eq? interped-r 0)
          (error 'interp-bin-op "SHEQ: Divide by zero error")
-         (func (interp l env) interped-r))]
-    [else (func (interp l env) (interp r env))]))
+         (func interped-l interped-r))]
+    [else (func interped-l interped-r)]))
 
 ;; interp-fns - interprets the main function: takes a list of FundefC, returns a real
 (define (interp-fns [fns : (Listof FundefC)]) : Real
-  (interp (AppC 'main '()) '()))
+  (num-value (interp (AppC 'main '()) top-env)))
 
 
 ;; ---- Parsers ----
@@ -202,50 +245,9 @@
 (define (distinct-args? [args : (Listof Symbol)]) : Boolean
   (not (check-duplicates args)))
 
-;; subst - substitutes all occurences of "from" for "what" in the ExprC "in", returns an ExprC
-#; (define (subst [what : ExprC] [from : Symbol] [in : ExprC]) : ExprC
-  (match in
-    [(NumC n) in]
-    ; If matching symbol, replace
-    [(IdC name) (cond
-                  [(equal? name from) what]
-                  [else in])]
-    ; Traverse operations
-    [(BinOpC op l r) (BinOpC op 
-                             (subst what from l) 
-                             (subst what from r))]
-    ; Traverse ifleq0?
-    [(IfC v t f) (IfC 
-                  (subst what from v)
-                  (subst what from t)
-                  (subst what from f))]
-    ; Traverse func apps, substituting all arguments
-    [(AppC name args) (AppC name (for/list ([a args])
-                                   (subst what from a)))]))
-
-
-;; zip - combine two lists of the same length, returning one list of corresponding elements
-#;(: zip (∀ (A B) ((Listof A) (Listof B) -> (Listof (List A B)))))
-#;(define (zip l1 l2)
-  (if (not (equal? (length l1) (length l2)))
-      (error "SHEQ: zip lists of unequal lengths")
-      (match* (l1 l2)
-        [('() '()) '()]
-        [((cons l1f l1r) 
-          (cons l2f l2r)) 
-         (cons 
-          (list l1f l2f) 
-          (zip l1r l2r))])))
-
-;; fold-args - Fold substitute arguments into a function application (ExprC)
-#; (define (fold-args [arg->exprc : (Listof (List Symbol ExprC))] [in : ExprC]) : ExprC
-  ; Zip (fdargs, args) and iterate over this list
-  (match arg->exprc
-    ['() in]
-    [(cons (list arg exprc) r) (fold-args r (subst exprc arg in))]))
 
 ;; create-env 
-(define (create-env [args : (Listof Symbol)] [vals : (Listof ExprC)] [env : Env]) : Env
+(define (create-env [args : (Listof Symbol)] [vals : (Listof Value)] [env : Env]) : Env
   (match* (args vals)
     [('() '()) env]
     [('() _) (error "SHEQ: too many values were passed in application ~a ~a" args vals)]
@@ -253,8 +255,8 @@
     [((cons fa ra) (cons fv rv))
      (create-env ra rv (cons (Binding fa fv) env))]))
 
-(check-equal? (create-env (list 'a) (list (NumC 5)) (list (Binding 'random (NumC 314))))
-              (list (Binding 'a (NumC 5)) (Binding 'random (NumC 314))))
+(check-equal? (create-env (list 'a) (list 5) (list (Binding 'random 314)))
+              (list (Binding 'a 5) (Binding 'random 314)))
 
 ;; ---- Tests
 
@@ -270,6 +272,7 @@
 #; (check-equal? (top-interp prog) 0)
 
 ;; ---- top-interp Tests ----
+; (top-interp '{def main () : {+ 1 {* 2 2}}})
 #;(check-equal? (top-interp '{
                             {def main () : {+ 1 {* 2 2}}}
                             }) 5)
@@ -294,14 +297,15 @@
            (lambda () (top-interp '{ {def main () : {}}})))
 
 ;; ---- interp tests ----
-(check-equal? (interp (NumC 89) '()) 89)
-(check-equal? (interp (BinOpC '+ (NumC 8) (BinOpC '* (NumC 2) (NumC 3))) '()) 14)
-(check-equal? (interp (AppC 'main '()) (list (Binding 'main (FundefC 'main '() (NumC 5))))) 5)
-(check-equal? (interp (AppC 'someFunction (list (NumC 3)))
+(check-equal? (interp (IdC 'true) top-env) #t)
+(check-equal? (interp (NumC 89) top-env) 89)
+(check-equal? (interp (BinOpC '+ (NumC 8) (BinOpC '* (NumC 2) (NumC 3))) top-env)  14)
+#; (check-equal? (interp (AppC 'main '()) (list (Binding 'main (FundefC 'main '() (NumC 5))))) 5)
+#; (check-equal? (interp (AppC 'someFunction (list (NumC 3)))
                       (list (Binding 'someFunction (FundefC 'someFunction '(x) (BinOpC '* (NumC 10) (IdC 'x)))))) 30)
 
 ;; ---- interp error check - unbound id's ----
-(check-exn #rx"SHEQ: An unbound identifier" (lambda () (interp (IdC 'x) '())))
+; (check-exn #rx"SHEQ: An unbound identifier" (lambda () (interp (IdC 'x) '())))
 
 
 ;; ---- interp-fns tests ----
