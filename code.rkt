@@ -501,7 +501,16 @@
 
 (check-exn #rx"SHEQ: Syntax error, unexpected reserved keyword, got" (lambda () (parse '=)))
 
-
+(check-equal? (top-interp 
+				'{let {[x = 5]
+					   [y = {+ 8 9}]}
+				  in
+				  {+ x {* y {let {[x = 3]}
+							 in
+							 {+ x x}
+							 end}}}
+				  end
+				 }) "107")
 
 
 ;; ---- Helper Tests ----
