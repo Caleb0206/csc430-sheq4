@@ -9,7 +9,7 @@
 ;; Data definitions
 
 ;; Value - Numbers and Booleans
-(define-type Value (U Real Boolean CloV PrimV))
+(define-type Value (U Real Boolean String CloV PrimV))
 
 ;; CloV - Closures
 (struct CloV ([params : (Listof Symbol)] [body : ExprC] [env : Env]) #:transparent)
@@ -115,6 +115,23 @@
 (check-exn #rx"SHEQ: PrimV \\<= expected 2 numbers, got" (lambda () (primv<= (list #f #t))))
 (check-exn #rx"SHEQ: Incorrect number of arguments" (lambda () (primv<= (list 3))))
 
+;; primvequal takes a list of Values, returns Boolean if arg1 == arg2 or false if either is PrimV/CloV
+(define (primvequal [args : (Listof Value)]) : Boolean
+  (match args
+    [(list a b)
+     (cond [(or (CloV? a) (CloV? b) (PrimV? a) (PrimV? b)) #f]
+           
+           [else (equal? a b)])]
+    [_ (error 'primvequal "SHEQ: Incorrect number of arguments")]))
+
+(check-equal? (primvequal (list 9 9)) #t)
+(check-equal? (primvequal (list #f #f)) #t)
+(check-equal? (primvequal (list "hi" "hi")) #t)
+(check-equal? (primvequal (list 3 #f)) #f)
+(check-equal? (primvequal (list (CloV '(x) (NumC 1) '()) (CloV '(x) (NumC 1) '()))) #f)
+(check-equal? (primvequal (list (PrimV '- 2 primv-) (PrimV '- 2 primv-))) #f)
+(check-exn #rx"SHEQ: Incorrect number of arguments" (lambda () (primvequal (list 3))))
+
 ;; Top level environment
 (: top-env Env)
 (define top-env (list
@@ -124,7 +141,8 @@
                  (Binding '- (PrimV '- 2 primv-))
                  (Binding '* (PrimV '* 2 primv*))
                  (Binding '/ (PrimV '/ 2 primv/))
-                 (Binding '<= (PrimV '<= 2 primv<=))))
+                 (Binding '<= (PrimV '<= 2 primv<=))
+                 (Binding 'equal? (PrimV 'equal? 2 primvequal))))
 
 ;; ---- Keywords & Internal Functions
 
@@ -159,6 +177,8 @@
 (check-equal? (serialize '32) "32")
 (check-equal? (serialize #f) "false")
 (check-equal? (serialize #t) "true")
+(check-equal? (serialize (CloV '(x) (NumC 34) top-env)) "#<procedure>")
+(check-equal? (serialize (PrimV '<= 2 primv<=)) "#<primop>")
 
 ;;
 #; (define (interp-args [args : (Listof ExprC)] [env : Env] [bindings : (Listof Binding)]) : (Listof Binding)
@@ -215,13 +235,19 @@
        [else
         (error 'interp "SHEQ: Attempted to apply non function value ~a" f-val)])]
                      
-    [(IdC id) (define val (get-binding-val id env))
-              (if (FundefC? val)
-                  (error 'interp "SHEQ: Cannot use Fundef as Id, got ~a" val)
-                  val)]))
+    [(IdC id) (get-binding-val id env)]))
 
 (check-equal? (interp (AppC (LamC '(x) (AppC (IdC '+) (list (IdC 'x) (NumC 1))))
                             (list (NumC 5))) top-env) 6)
+(check-exn #rx"SHEQ: Incorrect number of arguments"
+           (lambda ()
+             (interp (AppC (LamC '(x)
+                                 (AppC (IdC '+) (list (IdC 'x) (NumC 1) (NumC 2))))
+                           (list (NumC 5))) top-env)))
+(check-exn #rx"SHEQ: Attempted to apply non function value"
+           (lambda ()
+             (interp (AppC (NumC 9) (list (NumC 12))) top-env))) 
+
 
 ;; reserved-symbol? - Determines if a given symbol is in the reserved keywords
 ;; (+, -, /, *, def, ifleq0?, :)
