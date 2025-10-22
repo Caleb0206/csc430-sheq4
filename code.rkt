@@ -9,12 +9,15 @@
 ;; Data definitions
 
 ;; Value - Numbers and Booleans
-(define-type Value (U Real Boolean CloV))
+(define-type Value (U Real Boolean CloV PrimV))
 
-;; Closure
+;; CloV - Closures
 (struct CloV ([params : (Listof Symbol)] [body : ExprC] [env : Env]) #:transparent)
 
-;; LamC
+;; PrimV - Primitive Value types
+(struct PrimV ([op : Symbol] [num-args : Natural] [func : (-> (Listof Value) Value)]) #:transparent)
+
+;; LamC - Lambdas
 (struct LamC ([args : (Listof Symbol)] [body : ExprC]) #:transparent)
 
 ;; Binding : pair of a Symbol and a Value
@@ -24,16 +27,13 @@
 (define-type Env (Listof Binding))
 
 ;; ExprC type : NumC, BinOpC, IfC, IdC, AppC
-(define-type ExprC (U NumC BinOpC IfC IdC AppC LamC))
+(define-type ExprC (U NumC  IfC IdC AppC LamC))
 
 ;; NumC : a Real
 (struct NumC ([n : Real]) #:transparent)
 
 ;; IdC : a symbol representing an ID
 (struct IdC ([name : Symbol]) #:transparent)
-
-;; BinOpC : a binary operation with left and right ExprC's
-(struct BinOpC ([op : Symbol] [l : ExprC] [r : ExprC]) #:transparent)
 
 ;; IfC : an if statement of ExprC, and ExprC's to act on if true or false
 (struct IfC ([v : ExprC] [iftrue : ExprC] [iffalse : ExprC]) #:transparent)
@@ -44,21 +44,91 @@
 ;; FundefC : a function definition
 (struct FundefC ([name : Symbol] [args : (Listof Symbol)] [body : ExprC]) #:transparent)
 
+
+
+;; primv+ takes a list of Values, returns Real
+(define (primv+ [args : (Listof Value)]) : Real
+  (match args
+    [(list a b)
+     (cond
+       [(and (real? a) (real? b)) (+ a b)]
+       [else (error 'primv+ "SHEQ: PrimV + expected 2 numbers, got ~a" args)])]
+    [_ (error 'primv+ "SHEQ: Incorrect number of arguments")]))
+
+(check-equal? (primv+ (list 8 9)) 17)
+(check-exn #rx"SHEQ: PrimV \\+ expected 2 numbers, got" (lambda () (primv+ (list 8 #t))))
+(check-exn #rx"SHEQ: Incorrect number of arguments" (lambda () (primv+ (list 8 23 3 2))))
+
+;; primv* takes a list of Values, returns Real
+(define (primv* [args : (Listof Value)]) : Real
+  (match args
+    [(list a b)
+     (cond
+       [(and (real? a) (real? b)) (* a b)]
+       [else (error 'primv* "SHEQ: PrimV * expected 2 numbers, got ~a" args)])]
+    [_ (error 'primv* "SHEQ: Incorrect number of arguments")]))
+
+(check-equal? (primv* (list 8 4)) 32)
+(check-exn #rx"SHEQ: PrimV \\* expected 2 numbers, got" (lambda () (primv* (list #f #t))))
+(check-exn #rx"SHEQ: Incorrect number of arguments" (lambda () (primv* (list 2))))
+
+;; primv/ takes a list of Values, returns Real
+(define (primv/ [args : (Listof Value)]) : Real
+  (match args
+    [(list a b)
+     (cond
+       [(and (real? a) (real? b) (not (equal? b 0))) (/ a b)]
+       [(and (real? a) (real? b) (equal? b 0))
+        (error 'primv/ "SHEQ: Divide by zero error")]
+       [else (error 'primv/ "SHEQ: PrimV / expected 2 numbers, got ~a" args)])]
+    [_ (error 'primv/ "SHEQ: Incorrect number of arguments")]))
+
+(check-equal? (primv/ (list 33 11)) 3)
+(check-exn #rx"SHEQ: PrimV \\/ expected 2 numbers, got" (lambda () (primv/ (list #f #t))))
+(check-exn #rx"SHEQ: Divide by zero error" (lambda () (primv/ (list 3 0)))) 
+(check-exn #rx"SHEQ: Incorrect number of arguments" (lambda () (primv/ (list 21 2 3))))
+
+;; primv- takes a list of Values, returns Real
+(define (primv- [args : (Listof Value)]) : Real
+  (match args
+    [(list a b)
+     (cond
+       [(and (real? a) (real? b)) (- a b)]
+       [else (error 'primv- "SHEQ: PrimV - expected 2 numbers, got ~a" args)])]
+    [_ (error 'primv- "SHEQ: Incorrect number of arguments")]))
+
+(check-equal? (primv- (list 33 11)) 22)
+(check-exn #rx"SHEQ: PrimV \\- expected 2 numbers, got" (lambda () (primv- (list #f #t))))
+(check-exn #rx"SHEQ: Incorrect number of arguments" (lambda () (primv- (list 9 3 2 1 3))))
+
+;; primv<= takes a list of Values, returns Boolean if arg1 <= arg2
+(define (primv<= [args : (Listof Value)]) : Boolean
+  (match args
+    [(list a b)
+     (cond
+       [(and (real? a) (real? b)) (<= a b)]
+       [else (error 'primv<= "SHEQ: PrimV <= expected 2 numbers, got ~a" args)])]
+    [_ (error 'primv- "SHEQ: Incorrect number of arguments")]))
+
+(check-equal? (primv<= (list 3 11)) #t)
+(check-equal? (primv<= (list 3 -11)) #f)
+(check-exn #rx"SHEQ: PrimV \\<= expected 2 numbers, got" (lambda () (primv<= (list #f #t))))
+(check-exn #rx"SHEQ: Incorrect number of arguments" (lambda () (primv<= (list 3))))
+
 ;; Top level environment
 (: top-env Env)
 (define top-env (list
                  (Binding 'true #t)
-                 (Binding 'false #f)))
+                 (Binding 'false #f)
+                 (Binding '+ (PrimV '+ 2 primv+))
+                 (Binding '- (PrimV '- 2 primv-))
+                 (Binding '* (PrimV '* 2 primv*))
+                 (Binding '/ (PrimV '/ 2 primv/))
+                 (Binding '<= (PrimV '<= 2 primv<=))))
 
 ;; ---- Keywords & Internal Functions
-;; Binary Ops - a hash table of the binary operations
-(define bin-ops (hash
-                 '+ +
-                 '* *
-                 '/ /
-                 '- -))
-;; a list of key-words: + * - / ifleq0? def :
-;(define reserved-keywords '(+ * - / ifleq0? def :))
+
+;; a list of key-words
 (define reserved-keywords '(if lambda let = in end :))
 
 
@@ -71,19 +141,20 @@
 ;; num-value - takes a Value, if Real, returns Real
 (define (num-value [v : Value]) : Real
   (if (real? v) v
-      (error "SHEQ: Expected a Real, got ~a" v)))
+      (error 'num-value "SHEQ: Expected a Real, got ~a" v)))
 
 (check-equal? (num-value 8) 8)
 (check-exn #rx"SHEQ: Expected a" (lambda () (num-value #f)))
 
-;; serialize
+;; serialize - takes a Value and returns a serialized String
 (define (serialize [v : Value]) : String
   (match v
     [(? real? r) (~v r)]
     [(? boolean? b) (if b
                         "true"
                         "false")]
-    [(CloV _ _ _) "#<procedure>"]))
+    [(CloV _ _ _) "#<procedure>"]
+    [(PrimV _ _ _) "#<primop>"]))
 
 (check-equal? (serialize '32) "32")
 (check-equal? (serialize #f) "false")
@@ -95,21 +166,7 @@
     ['() '()]
     [(cons arg r) (cons (Binding arg (interp arg)))]
     [_ (error 'interp-args "SHEQ: idk yet")]))
-;; interp-bin-op - takes a binary operator symbol, ExprC left and right, list of FundefC, to return a Real
-(define (interp-bin-op [s : Symbol] [l : ExprC] [r : ExprC] [env : Env]) : Value
-  ; retrieve function from hashtable
-  (define func (hash-ref bin-ops s))
-  (define interped-r (num-value (interp r env)))
-  (define interped-l (num-value (interp l env)))
-  ; check division for divide by zero
-  (cond 
-    [(eq? s '/)
-     ; preemptively interpret right side for potential 0
-     ; if right is 0, throw a divide by 0 error
-     (if (eq? interped-r 0)
-         (error 'interp-bin-op "SHEQ: Divide by zero error")
-         (func interped-l interped-r))]
-    [else (func interped-l interped-r)]))
+
 
 
 ;; get-binding-val takes a symbol and enviornment, performs a lookup and returns an ExprC if found
@@ -138,19 +195,23 @@
   (match e
     [(NumC n) n]
     [(IfC v l r) (if (<= (num-value (interp v env)) 0) (interp l env) (interp r env))]
-    [(BinOpC s l r) (interp-bin-op s l r env)]
     [(LamC params body) (CloV params body env)]
     [(AppC lam args)
      (define f-val (interp lam env))
+     (define arg-vals
+       (for/list : (Listof Value) ([a args])
+         (interp a env)))
      (cond
        [(CloV? f-val)
-        (define arg-vals
-          (for/list : (Listof Value) ([a args])
-            (interp a env)))
         (define new-env
           (append (map Binding (CloV-params f-val) arg-vals)
                   (CloV-env f-val)))
         (interp (CloV-body f-val) new-env)]
+       [(PrimV? f-val)
+        (if (equal? (PrimV-num-args f-val) (length arg-vals))
+            ((PrimV-func f-val) arg-vals)
+            (error 'interp "SHEQ: Incorrect number of arguments to ~a, expected ~a but got ~a"
+                   (PrimV-op f-val) (PrimV-num-args f-val) (length arg-vals)))]
        [else
         (error 'interp "SHEQ: Attempted to apply non function value ~a" f-val)])]
                      
@@ -159,18 +220,18 @@
                   (error 'interp "SHEQ: Cannot use Fundef as Id, got ~a" val)
                   val)]))
 
-(check-equal? (interp (AppC (LamC '(x) (BinOpC '+ (IdC 'x) (NumC 1)))
+(check-equal? (interp (AppC (LamC '(x) (AppC (IdC '+) (list (IdC 'x) (NumC 1))))
               (list (NumC 5))) top-env) 6)
 
+;; reserved-symbol? - Determines if a given symbol is in the reserved keywords
+;; (+, -, /, *, def, ifleq0?, :)
+(define (reserved-symbol? [s : Symbol]) : Boolean
+  (if (memq s reserved-keywords)
+      #t
+      #f))
 
 
-
-
-
-
-
-
-;; ---- Parsers ----
+;; ---- Parsers ---- 
 ;; parse - takes a S-exp and returns concrete syntax in ExprC format
 (define (parse [e : Sexp]) : ExprC
   ; template
@@ -194,41 +255,12 @@
      (LamC (cast params (Listof Symbol)) (parse body))]
     
     [(list f args ...)
-         (AppC (parse f) (for/list : (Listof ExprC) ([a args]) (parse a)))]
+     (AppC (parse f) (for/list : (Listof ExprC) ([a args]) (parse a)))]
     [other (error 'parse "SHEQ: Syntax error, got ~e" other)]))
-
-(check-equal? (parse '{(lambda (x) : {+ x 1}) 5})
-              (AppC (LamC '(x) (AppC (IdC '+) (list (IdC 'x) (NumC 1)))) (list (NumC 5))))
-
-;; parse-rsvfn - takes an S-exp and returns an exprc of the reserved function
-;; throws an error if the applied function is improperly formatted
-(define (parse-rsvfn [s : Sexp]) : ExprC 
-  ; template
-  #;(match s
-      [binop -> parse left and right]
-      [ifleq0? -> parse v, left and right]
-      [else -> throw error (like using def or : in an application)])
-  ; body
-  (match s
-    [(list (and (? symbol? op) (? binop-symbol?)) l r) (BinOpC op (parse l) (parse r))]
-    [(list 'ifleq0? v t f) (IfC (parse v) (parse t) (parse f))]
-    [other (error 'parse-rsvfn "SHEQ: Syntax error, unexpected reserved keyword, got ~e" other)]))
-
 
 
 ;; ---- Helper functions ----
 
-
-;; reserved-symbol? - Determines if a given symbol is in the reserved keywords
-;; (+, -, /, *, def, ifleq0?, :)
-(define (reserved-symbol? [s : Symbol]) : Boolean
-  (if (memq s reserved-keywords)
-      #t
-      #f))
-
-;; binop-symbol? - takes a symbol and returns true if it is a binop symbol
-(define (binop-symbol? [s : Symbol]) : Boolean
-  (hash-has-key? bin-ops s))
 
 ;; distinct-args? - returns true if every symbol in args is distinct 
 (define (distinct-args? [args : (Listof Symbol)]) : Boolean
@@ -274,7 +306,7 @@
 #;(check-equal? (top-interp '{{def main() : {ifleq0? -1 10 -10}}}) 10)
 
 ;; divide by zero error test case (from handin)
-#; (check-exn #rx"SHEQ: Divide by zero error"
+#;(check-exn #rx"SHEQ: Divide by zero error"
            (lambda () (top-interp
                        '{{def ignoreit (x) : {+ 7 15}} {def main () : {ignoreit {/ 52 (+ 0 0)}}}})))
 
@@ -291,12 +323,16 @@
 (check-equal? (interp (AppC (IdC '+) (list (NumC 8)
                                            (AppC (IdC '*) (list (NumC 2) (NumC 3))))) top-env)  14) 
 (check-equal? (interp (AppC (IdC 'main) '()) (list (Binding 'main (CloV '() (NumC 5) '())))) 5)
-#; (check-equal? (interp (AppC 'someFunction (list (NumC 3)))
-                      (list (Binding 'someFunction (FundefC 'someFunction '(x) (BinOpC '* (NumC 10) (IdC 'x)))))) 30)
+(check-equal? (interp (AppC (IdC 'someFunction) (list (NumC 3)))
+                      (list (Binding 'someFunction
+                                     (CloV '(x)
+                                           (AppC (IdC '*) (list (NumC 10) (IdC 'x)))
+                                           top-env)))) 30)
 
 ;; ---- interp error check - unbound id's ----
-; (check-exn #rx"SHEQ: An unbound identifier" (lambda () (interp (IdC 'x) '())))
-
+(check-exn #rx"SHEQ: An unbound identifier" (lambda () (interp (IdC 'x) '())))
+(check-exn #rx"SHEQ: PrimV \\+ expected 2 numbers" (lambda () (interp (AppC (IdC '+) (list (IdC '-) (NumC 4))) top-env)))
+(check-exn #rx"SHEQ: Divide by zero error" (lambda () (interp (AppC (IdC '/) (list (NumC 5) (NumC 0))) top-env)))
 
 
 ;; ---- Recursion Test ----
@@ -316,13 +352,15 @@
 
 
 ;; ---- interp-bin-op tests ----
-(check-equal? (interp-bin-op '* (NumC 2) (NumC 5) '()) 10)
+;(check-equal? (interp-bin-op '* (NumC 2) (NumC 5) '()) 10)
 
 ;; throws Divide by zero error
-(check-exn #rx"SHEQ: Divide by zero error" (lambda () (interp-bin-op '/ (NumC 43) (NumC 0) '())))
+;(check-exn #rx"SHEQ: Divide by zero error" (lambda () (interp-bin-op '/ (NumC 43) (NumC 0) '())))
 
 
 ;; ---- parse Tests ----
+(check-equal? (parse '{(lambda (x) : {+ x 1}) 5})
+              (AppC (LamC '(x) (AppC (IdC '+) (list (IdC 'x) (NumC 1)))) (list (NumC 5))))
 (check-equal? (parse '{+ 5 12}) (AppC (IdC '+) (list (NumC 5) (NumC 12))))
 (check-equal? (parse '{applyThis 5 12}) (AppC (IdC 'applyThis) (list (NumC 5) (NumC 12))))
 (check-equal? (parse 'double) (IdC 'double))
@@ -333,19 +371,6 @@
 (check-exn #rx"SHEQ: Syntax error, got"
            (lambda () (parse '{})))
 
-#;(check-exn #rx"SHEQ: Syntax error, unexpected reserved keyword, got"
-           (lambda () (parse '{- 11 22 33 4 5})))
-
-#;(check-exn #rx"SHEQ: Syntax error, got"
-           (lambda () (parse '{+ - 4})))
-
-#;(check-exn #rx"SHEQ: Syntax error, got"
-           (lambda () (parse '{+ 93 /})))
-
-;; parse ifleq0? error checking 
-#;(check-exn #rx"SHEQ: Syntax error, unexpected reserved keyword, got"
-           (lambda () (parse '{ifleq0?})))
-
 (check-exn #rx"SHEQ: Syntax error, unexpected reserved keyword, got"
            (lambda () (parse '{let 2})))
 
@@ -354,9 +379,7 @@
 
 (check-exn #rx"SHEQ: Syntax error, unexpected reserved keyword, got" (lambda () (parse '=)))
 
-;; parse-rsvfn tests (pretty much same as parse but only reserved functions)
-(check-equal? (parse-rsvfn '{+ 5 5}) (BinOpC '+ (NumC 5) (NumC 5)))
-(check-equal? (parse-rsvfn '{ifleq0? 5 x y}) (IfC (NumC 5) (IdC 'x) (IdC 'y)))
+
 
 
 ;; ---- Helper Tests ----
@@ -368,7 +391,3 @@
 ;; reserved-symbol tests
 (check-equal? (reserved-symbol? 'lambda) #t)
 (check-equal? (reserved-symbol? '+++) #f)
-
-;; parse-rsvfn tests
-#;(check-equal? (binop-symbol? '*) #t)
-#;(check-equal? (binop-symbol? '&) #f)
