@@ -27,10 +27,13 @@
 (define-type Env (Listof Binding))
 
 ;; ExprC type : NumC, BinOpC, IfC, IdC, AppC
-(define-type ExprC (U NumC IfC IdC AppC LamC))
+(define-type ExprC (U NumC IfC IdC AppC LamC StringC))
 
 ;; NumC : a Real
 (struct NumC ([n : Real]) #:transparent)
+
+;; StringC : a String
+(struct StringC ([s : String]) #:transparent)
 
 ;; IdC : a symbol representing an ID
 (struct IdC ([name : Symbol]) #:transparent)
@@ -214,6 +217,7 @@
     [(? boolean? b) (if b
                         "true"
                         "false")]
+    [(? string? s) (~v s)]
     [(CloV _ _ _) "#<procedure>"]
     [(PrimV _ _ _) "#<primop>"]))
 
@@ -258,6 +262,7 @@
   ; body
   (match e
     [(NumC n) n]
+    [(StringC s) s]
     [(IfC v if-t if-f)
      (define test-val (interp v env))
      (cond
@@ -315,6 +320,7 @@
   ; body
   (match e
     [(? real? n) (NumC n)]
+    [(? string? s) (StringC s)]
     [(? symbol? name)
      (if (reserved-symbol? name)
          (error 'parse "SHEQ: Syntax error, unexpected reserved keyword, got ~e" name)
@@ -369,6 +375,9 @@
 
 ;; ---- top-interp Tests ----
 (check-equal? (top-interp '{+ 3 2}) "5")
+(check-equal? (top-interp '{if {<= 5 10} "less than" "not less than"}) "\"less than\"")
+
+
 
 ; (top-interp '{def main () : {+ 1 {* 2 2}}})
 #;(check-equal? (top-interp '{
