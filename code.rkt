@@ -135,30 +135,39 @@
   (match args
     [(list s start stop)
      (cond
-       [(and (string? s) (natural? start) (natural? stop) (>= start 0) (< stop (string-length s)))
+       [(and (string? s) (natural? start) (natural? stop) (>= start 0) (< start (string-length s)) (>= stop 0) (< stop (string-length s)))
         (substring s (inexact->exact start) (inexact->exact stop))]
        [else
         (error 'primvsubstr "SHEQ: Substring needs string and 2 valid natural indices, got ~a" args)])]
     [_ (error 'primvsubstr "SHEQ: Incorrect number of arguments, expected 3, got ~a" (length args))])
   )
+(check-equal? (primvsubstr (list "hello world!" 0 5)) "hello")
+(check-exn #rx"SHEQ: Substring needs string and 2 valid natural indices" (lambda () (primvsubstr (list "hello" 99 1))))
+(check-exn #rx"SHEQ: Incorrect number of arguments, expected 3" (lambda () (primvsubstr (list "bib" 0 1 23 3))))
 
-;; 
+
+;; primvstrlen - helper function takes a Listof Value, returns a Real (length of the string inside the List)
 (define (primvstrlen [args : (Listof Value)]) : Real
   (match args
     [(list s)
      (if (string? s)
          (string-length s)
          (error 'primvstrlen "SHEQ: Syntax error, ~a is not a string" s))]
-    [_ (error 'primvstrlen "SHEQ: Incorrect number of arguments to strlen, expected 1, got ~a" (length args))]))
+    [_ (error 'primvstrlen "SHEQ: Incorrect number of arguments, expected 1, got ~a" (length args))]))
 
-;; primverror
+(check-equal? (primvstrlen (list "hello world!")) 12)
+(check-exn #rx"SHEQ: Syntax error" (lambda () (primvstrlen (list 3))))
+(check-exn #rx"SHEQ: Incorrect number of arguments, expected 1" (lambda () (primvstrlen (list "bib" "five" 3))))
+
+
+;; primverror - takes a Listof Value, throws a user-created error
 (define (primverror [args : (Listof Value)]) : Nothing
   (match args
     [(list v)
      (error 'primverror "SHEQ: user-error ~a" (serialize v))]
-    [_ (error 'primverror "SHEQ: Incorrect number of arguments to error, expected 1, got ~a" (length args))]))
+    [_ (error 'primverror "SHEQ: Incorrect number of arguments, expected 1, got ~a" (length args))]))
 
-
+(check-exn #rx"SHEQ: Incorrect number of arguments, expected 1" (lambda () (primverror (list "This" "too many"))))
 
 
 ;; Top level environment
@@ -188,6 +197,8 @@
 (define (top-interp [s : Sexp]) : String
   (serialize (interp (parse s) top-env)))
 
+
+
 ;; num-value - takes a Value, if Real, returns Real
 (define (num-value [v : Value]) : Real
   (if (real? v) v
@@ -213,7 +224,6 @@
 (check-equal? (serialize (PrimV '<= 2 primv<=)) "#<primop>")
 
 (check-exn #rx"SHEQ: user-error true" (lambda () (primverror (list #t))))
-
 ;;
 #; (define (interp-args [args : (Listof ExprC)] [env : Env] [bindings : (Listof Binding)]) : (Listof Binding)
      (match args
@@ -339,6 +349,10 @@
 
 (check-equal? (create-env (list 'a) (list 5) (list (Binding 'random 314)))
               (list (Binding 'a 5) (Binding 'random 314)))
+(check-exn #rx"SHEQ: too many values were passed in application"
+           (lambda () (create-env (list 'a) (list 5 3 4) (list (Binding 'random 314)))))
+(check-exn #rx"SHEQ: too few values were passed in application"
+           (lambda () (create-env (list 'a 'x) (list 4) (list (Binding 'random 314)))))
 
 ;; ---- Tests
 
@@ -354,6 +368,8 @@
 #; (check-equal? (top-interp prog) 0)
 
 ;; ---- top-interp Tests ----
+(check-equal? (top-interp '{+ 3 2}) "5")
+
 ; (top-interp '{def main () : {+ 1 {* 2 2}}})
 #;(check-equal? (top-interp '{
                               {def main () : {+ 1 {* 2 2}}}
