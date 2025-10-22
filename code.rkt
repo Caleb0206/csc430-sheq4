@@ -14,7 +14,7 @@
 ;; Closure
 (struct CloV ([params : (Listof Symbol)] [body : ExprC] [env : Env]) #:transparent)
 
-;; Lambda
+;; LamC
 (struct LamC ([args : (Listof Symbol)] [body : ExprC]) #:transparent)
 
 ;; Binding : pair of a Symbol and a Value
@@ -39,7 +39,7 @@
 (struct IfC ([v : ExprC] [iftrue : ExprC] [iffalse : ExprC]) #:transparent)
 
 ;; AppC : a name (symbol) with a list of ExprC's
-(struct AppC ([lam : LamC] [args : (Listof ExprC)]) #:transparent)
+(struct AppC ([expr : ExprC] [args : (Listof ExprC)]) #:transparent)
 
 ;; FundefC : a function definition
 (struct FundefC ([name : Symbol] [args : (Listof Symbol)] [body : ExprC]) #:transparent)
@@ -58,7 +58,8 @@
                  '/ /
                  '- -))
 ;; a list of key-words: + * - / ifleq0? def :
-(define reserved-keywords '(+ * - / ifleq0? def :))
+;(define reserved-keywords '(+ * - / ifleq0? def :))
+(define reserved-keywords '(if lambda let = in end :))
 
 
 ;; ---- Interpreters ----
@@ -89,51 +90,11 @@
 (check-equal? (serialize #t) "true")
 
 ;;
-(define (interp-args [args : (Listof ExprC)] [env : Env] [bindings : (Listof Binding)]) : (Listof Binding)
+#; (define (interp-args [args : (Listof ExprC)] [env : Env] [bindings : (Listof Binding)]) : (Listof Binding)
   (match args
     ['() '()]
     [(cons arg r) (cons (Binding arg (interp arg)))]
     [_ (error 'interp-args "SHEQ: idk yet")]))
-
-;; interp - takes the complete AST (ExprC) with a list of FundefC, returning a Real
-(define (interp [e : ExprC] [env : Env]) : Value
-  ; template
-  #;(match e
-      [numc -> number]
-      [ifc -> eval if expr]
-      [binop -> eval binop]
-      [application -> interp folded function]
-      [idc -> throw error at unbound value])
-
-  ; body
-  (match e
-    [(NumC n) n]
-    [(IfC v l r) (if (<= (num-value (interp v env)) 0) (interp l env) (interp r env))]
-    [(BinOpC s l r) (interp-bin-op s l r env)]
-    [(AppC lam args) (define f-val (interp lam env))
-                     (define arg-vals (interp-args args))
-                     ;; FIX NOW :(
-                     ()]
-    [(IdC id) (define val (get-binding-val id env))
-              (if (FundefC? val)
-                  (error 'interp "SHEQ: Cannot use Fundef as Id, got ~a" val)
-                  val)]))
-
-;; get-binding-val takes a symbol and enviornment, performs a lookup and returns an ExprC if found
-(define (get-binding-val [s : Symbol] [env : Env]) : Value
-  (match env
-    ['() (error 'get-binding "SHEQ: An unbound identifier ~a" s)]
-    [(cons (Binding name val) r)
-     (if (equal? s name)
-         val
-         (get-binding-val s r))]))
-
-(check-equal? (get-binding-val 'sym (list (Binding 'sym 5))) 5)
-(check-exn #rx"SHEQ: An unbound identifier" (lambda () (get-binding-val 'sym '())))
-
-
-
-
 ;; interp-bin-op - takes a binary operator symbol, ExprC left and right, list of FundefC, to return a Real
 (define (interp-bin-op [s : Symbol] [l : ExprC] [r : ExprC] [env : Env]) : Value
   ; retrieve function from hashtable
@@ -150,9 +111,63 @@
          (func interped-l interped-r))]
     [else (func interped-l interped-r)]))
 
-;; interp-fns - interprets the main function: takes a list of FundefC, returns a real
-(define (interp-fns [fns : (Listof FundefC)]) : Real
-  (num-value (interp (AppC 'main '()) top-env)))
+
+;; get-binding-val takes a symbol and enviornment, performs a lookup and returns an ExprC if found
+(define (get-binding-val [s : Symbol] [env : Env]) : Value
+  (match env
+    ['() (error 'get-binding "SHEQ: An unbound identifier ~a" s)]
+    [(cons (Binding name val) r)
+     (if (equal? s name)
+         val
+         (get-binding-val s r))]))
+
+(check-equal? (get-binding-val 'sym (list (Binding 'sym 5))) 5)
+(check-exn #rx"SHEQ: An unbound identifier" (lambda () (get-binding-val 'sym '())))
+
+;; interp - takes the complete AST (ExprC) with a list of FundefC, returning a Real
+(define (interp [e : ExprC] [env : Env]) : Value
+  ; template
+  #;(match e
+      [numc -> number]
+      [ifc -> eval if expr]
+      [binop -> eval binop]
+      [application -> interp folded function]
+      [idc -> throw error at unbound value])
+
+  ; body
+  (match e
+    [(NumC n) n]
+    [(IfC v l r) (if (<= (num-value (interp v env)) 0) (interp l env) (interp r env))]
+    [(BinOpC s l r) (interp-bin-op s l r env)]
+    [(LamC params body) (CloV params body env)]
+    [(AppC lam args)
+     (define f-val (interp lam env))
+     (cond
+       [(CloV? f-val)
+        (define arg-vals
+          (for/list : (Listof Value) ([a args])
+            (interp a env)))
+        (define new-env
+          (append (map Binding (CloV-params f-val) arg-vals)
+                  (CloV-env f-val)))
+        (interp (CloV-body f-val) new-env)]
+       [else
+        (error 'interp "SHEQ: Attempted to apply non function value ~a" f-val)])]
+                     
+    [(IdC id) (define val (get-binding-val id env))
+              (if (FundefC? val)
+                  (error 'interp "SHEQ: Cannot use Fundef as Id, got ~a" val)
+                  val)]))
+
+(check-equal? (interp (AppC (LamC '(x) (BinOpC '+ (IdC 'x) (NumC 1)))
+              (list (NumC 5))) top-env) 6)
+
+
+
+
+
+
+
 
 
 ;; ---- Parsers ----
@@ -171,15 +186,19 @@
   ; body
   (match e
     [(? real? n) (NumC n)]
-    [(? symbol? name) #:when (not (reserved-symbol? name)) (IdC name)] 
-    [(list (? symbol? fn) args ...)
-     (if (reserved-symbol? fn)
-         ; separately parse S-exp of reserved function
-         (parse-rsvfn e)
-         (AppC fn (for/list ([a args]) (parse a))))]
+    [(? symbol? name)
+     (if (reserved-symbol? name)
+         (error 'parse "SHEQ: Syntax error, unexpected reserved keyword, got ~e" name)
+         (IdC name))] 
+    [(list 'lambda (list (? symbol? params) ...) ': body)
+     (LamC (cast params (Listof Symbol)) (parse body))]
+    
+    [(list f args ...)
+         (AppC (parse f) (for/list : (Listof ExprC) ([a args]) (parse a)))]
     [other (error 'parse "SHEQ: Syntax error, got ~e" other)]))
 
-
+(check-equal? (parse '{(lambda (x) : {+ x 1}) 5})
+              (AppC (LamC '(x) (AppC (IdC '+) (list (IdC 'x) (NumC 1)))) (list (NumC 5))))
 
 ;; parse-rsvfn - takes an S-exp and returns an exprc of the reserved function
 ;; throws an error if the applied function is improperly formatted
@@ -195,39 +214,9 @@
     [(list 'ifleq0? v t f) (IfC (parse v) (parse t) (parse f))]
     [other (error 'parse-rsvfn "SHEQ: Syntax error, unexpected reserved keyword, got ~e" other)]))
 
-;; parse-prog - takes a S-exp to return a list of FundefC's 
-(define (parse-prog [s : Sexp]) : (Listof FundefC)
-  (match s
-    ['() '()]
-    [(cons f r) (cons (parse-fundef f) (parse-prog r))]))
-
-;; parse-fundef - takes a S-exp to return a FundefC
-(define (parse-fundef [e : Sexp]) : FundefC
-  #;(match e
-      [fundef with not reserved name -> validate arguments and parse]
-      [else throw error])
-  (match e
-    [(list 'def (? symbol? name) (list (? symbol? args) ...) ': body)
-     #:when (not (reserved-symbol? name))
-     (define arg-symbols (cast args (Listof Symbol)))
-     ; ensure all arguments are distinct
-     (if (distinct-args? arg-symbols)
-         (FundefC name arg-symbols (parse body))
-         (error 'parse-fundef "SHEQ: Invalid argument list. Function: ~a Args: ~a" name args))]
-    [_ (error 'parse-fundefc "SHEQ: Syntax error: Invalid function definition, got ~e" e)]))
 
 
 ;; ---- Helper functions ----
-
-;; get-fundef - return a FundefC from defs given a symbol name and a list of defs
-(define (get-fundef [name : Symbol] [defs : (Listof FundefC)]) : FundefC
-  (cond
-    [(empty? defs) (error 'get-fundef "SHEQ: Syntax error: Unknown function id, got ~e" name)]
-    [else
-     (define curr-def (first defs))
-     (if (equal? name (FundefC-name curr-def))
-         curr-def
-         (get-fundef name (rest defs)))]))
 
 
 ;; reserved-symbol? - Determines if a given symbol is in the reserved keywords
@@ -299,8 +288,9 @@
 ;; ---- interp tests ----
 (check-equal? (interp (IdC 'true) top-env) #t)
 (check-equal? (interp (NumC 89) top-env) 89)
-(check-equal? (interp (BinOpC '+ (NumC 8) (BinOpC '* (NumC 2) (NumC 3))) top-env)  14)
-#; (check-equal? (interp (AppC 'main '()) (list (Binding 'main (FundefC 'main '() (NumC 5))))) 5)
+(check-equal? (interp (AppC (IdC '+) (list (NumC 8)
+                                           (AppC (IdC '*) (list (NumC 2) (NumC 3))))) top-env)  14) 
+(check-equal? (interp (AppC (IdC 'main) '()) (list (Binding 'main (CloV '() (NumC 5) '())))) 5)
 #; (check-equal? (interp (AppC 'someFunction (list (NumC 3)))
                       (list (Binding 'someFunction (FundefC 'someFunction '(x) (BinOpC '* (NumC 10) (IdC 'x)))))) 30)
 
@@ -308,26 +298,6 @@
 ; (check-exn #rx"SHEQ: An unbound identifier" (lambda () (interp (IdC 'x) '())))
 
 
-;; ---- interp-fns tests ----
-; (check-equal? (interp-fns (list (FundefC 'main '() (NumC 101)))) 101)
-
-#; (check-equal? (interp-fns
-               (list
-                (FundefC 'lovely '(aww)
-                         (IfC (IdC 'aww)
-                              (BinOpC '* (IdC 'aww) (NumC 2))
-                              (BinOpC '- (IdC 'aww) (NumC 100))))
-                (FundefC 'main '()
-                         (AppC 'lovely (list (NumC 143)) )))) 43)
-
-#; (check-equal? (interp-fns
-               (list
-                (FundefC 'lovely '(aww)
-                         (IfC (IdC 'aww)
-                              (BinOpC '* (IdC 'aww) (NumC 2))
-                              (BinOpC '- (IdC 'aww) (NumC 100))))
-                (FundefC 'main '()
-                         (AppC 'lovely (list (NumC -143)) )))) -286)
 
 ;; ---- Recursion Test ----
 (define reProg '{
@@ -353,112 +323,52 @@
 
 
 ;; ---- parse Tests ----
-(check-equal? (parse '{+ 5 12}) (BinOpC '+ (NumC 5) (NumC 12)))
-(check-equal? (parse '{applyThis 5 12}) (AppC 'applyThis (list (NumC 5) (NumC 12))))
+(check-equal? (parse '{+ 5 12}) (AppC (IdC '+) (list (NumC 5) (NumC 12))))
+(check-equal? (parse '{applyThis 5 12}) (AppC (IdC 'applyThis) (list (NumC 5) (NumC 12))))
 (check-equal? (parse 'double) (IdC 'double))
-(check-equal? (parse '{double x 2}) (AppC 'double (list (IdC 'x) (NumC 2))))
-(check-equal? (parse '{ifleq0? 5 x y}) (IfC (NumC 5) (IdC 'x) (IdC 'y)))
+(check-equal? (parse '{double x 2}) (AppC (IdC 'double) (list (IdC 'x) (NumC 2))))
+(check-equal? (parse '{ifleq0? 5 x y}) (AppC (IdC 'ifleq0?) (list (NumC 5) (IdC 'x) (IdC 'y))))
 
 ; parse error checking
 (check-exn #rx"SHEQ: Syntax error, got"
            (lambda () (parse '{})))
 
-(check-exn #rx"SHEQ: Syntax error, unexpected reserved keyword, got"
+#;(check-exn #rx"SHEQ: Syntax error, unexpected reserved keyword, got"
            (lambda () (parse '{- 11 22 33 4 5})))
 
-(check-exn #rx"SHEQ: Syntax error, got"
+#;(check-exn #rx"SHEQ: Syntax error, got"
            (lambda () (parse '{+ - 4})))
 
-(check-exn #rx"SHEQ: Syntax error, got"
+#;(check-exn #rx"SHEQ: Syntax error, got"
            (lambda () (parse '{+ 93 /})))
 
-;; parse ifleq0? error checking
-(check-exn #rx"SHEQ: Syntax error, unexpected reserved keyword, got"
+;; parse ifleq0? error checking 
+#;(check-exn #rx"SHEQ: Syntax error, unexpected reserved keyword, got"
            (lambda () (parse '{ifleq0?})))
 
 (check-exn #rx"SHEQ: Syntax error, unexpected reserved keyword, got"
-           (lambda () (parse '{ifleq0? 2})))
+           (lambda () (parse '{let 2})))
 
 (check-exn #rx"SHEQ: Syntax error, unexpected reserved keyword, got"
-           (lambda () (parse '{ifleq0? 3 4 3 2})))
+           (lambda () (parse '{end 3 4 3 2})))
 
-(check-exn #rx"SHEQ: Syntax error, got" (lambda () (parse 'ifleq0?)))
+(check-exn #rx"SHEQ: Syntax error, unexpected reserved keyword, got" (lambda () (parse '=)))
 
 ;; parse-rsvfn tests (pretty much same as parse but only reserved functions)
 (check-equal? (parse-rsvfn '{+ 5 5}) (BinOpC '+ (NumC 5) (NumC 5)))
 (check-equal? (parse-rsvfn '{ifleq0? 5 x y}) (IfC (NumC 5) (IdC 'x) (IdC 'y)))
 
 
-;; parse-prog Tests
-(check-equal? (parse-prog '{{def fiftyFive () : 55}}) (list (FundefC 'fiftyFive '() (NumC 55))))
-(check-equal? (parse-prog '{{def plusOne (x) : {+ x 1}} {def main () : {plusOne 3}}})
-              (list (FundefC 'plusOne '(x) (BinOpC '+ (IdC 'x) (NumC 1)))
-                    (FundefC 'main '() (AppC 'plusOne (list (NumC 3))))))
-
-
-;; parse-fundef tests
-(check-equal? (parse-fundef '{def five () : 5}) (FundefC 'five '() (NumC 5)))
-(check-equal? (parse-fundef '{def area (w h) : {* w h}}) (FundefC 'area '(w h) (BinOpC '* (IdC 'w) (IdC 'h))))
-(check-equal? (parse-fundef '{def five () : 5}) (FundefC 'five '() (NumC 5)))
-
-; parse-fundef error checking
-(check-exn #rx"SHEQ: Syntax error: Invalid function definition, got"
-           (lambda () (parse-fundef '{def badfunction () : es es e })))
-(check-exn #rx"SHEQ: Syntax error: Invalid function definition, got"
-           (lambda () (parse-fundef '{def badfunction () 32})))
-(check-exn #rx"SHEQ: Syntax error: Invalid function definition, got"
-           (lambda () (parse-fundef '{+ 1 2})))
-(check-exn #rx"SHEQ: Syntax error: Invalid function definition, got"
-           (lambda () (parse-fundef '{func 3})))
-(check-exn #rx"SHEQ: Syntax error: Invalid function definition, got"
-           (lambda () (parse-fundef '{def + () : 13})))
-(check-exn #rx"SHEQ: Invalid argument list"
-           (lambda () (parse-fundef '{def bad (x x) : {+ x 1}})))
-
 ;; ---- Helper Tests ----
-;; get-fundef tests
-(check-equal? (get-fundef 'runThis (list (FundefC 'notThis '() (NumC -1)) (FundefC 'runThis '(yes) (IdC 'yes))))
-              (FundefC 'runThis '(yes) (IdC 'yes)))
-(check-exn #rx"SHEQ: Syntax error: Unknown function id"
-           (lambda () (get-fundef 'foo '())))
-
-
-;; zip tests
-#;(check-equal? (zip '(1 2 3) '(4 5 6)) '((1 4) (2 5) (3 6)))
-#;(check-equal? (zip (list (IdC 'bobCredit) (IdC 'aliceCredit)) (list (NumC -13) (NumC 232)))
-              (list (list
-                     (IdC 'bobCredit) (NumC -13))
-                    (list (IdC 'aliceCredit) (NumC 232))))
-
-;; subst tests
-#;(check-equal? (subst (NumC 55) 'num (BinOpC '/ (IdC 'num) (NumC 5))) (BinOpC '/ (NumC 55) (NumC 5)))
-#;(check-equal? (subst (NumC 8) 's (NumC 9)) (NumC 9))
-#;(check-equal? (subst (NumC -1) 'negativeone (IfC (IdC 'negativeone) (NumC -10) (NumC 10)))
-              (IfC (NumC -1) (NumC -10) (NumC 10)))
-#;(check-equal? (subst (NumC 0.4) 'x (AppC 'quadruple (list (BinOpC '* (IdC 'x) (NumC 4)))))
-              (AppC 'quadruple (list (BinOpC '* (NumC 0.4) (NumC 4)))))
-
-
-;; fold-arg tests
-#;(check-equal? (fold-args (list
-                          (list 'bunnies (NumC 38)))
-                         (BinOpC '* (IdC 'bunnies) (NumC 1.8)))
-              (BinOpC '* (NumC 38) (NumC 1.8)))
-
-#;(check-equal? (fold-args (list
-                          (list 'x (NumC 200))
-                          (list 'y (NumC 1)))
-                         (BinOpC '- (IdC 'x) (BinOpC '* (IdC 'y) (IdC 'y))))
-              (BinOpC '- (NumC 200) (BinOpC '* (NumC 1) (NumC 1))))
 
 ;; distinct-args? tests
 (check-equal? (distinct-args? '(x y z)) #t)
 (check-equal? (distinct-args? '(x y x)) #f)
 
 ;; reserved-symbol tests
-(check-equal? (reserved-symbol? '+) #t)
+(check-equal? (reserved-symbol? 'lambda) #t)
 (check-equal? (reserved-symbol? '+++) #f)
 
 ;; parse-rsvfn tests
-(check-equal? (binop-symbol? '*) #t)
-(check-equal? (binop-symbol? '&) #f)
+#;(check-equal? (binop-symbol? '*) #t)
+#;(check-equal? (binop-symbol? '&) #f)
