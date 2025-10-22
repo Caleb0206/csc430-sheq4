@@ -130,6 +130,37 @@
 (check-equal? (primvequal (list (PrimV '- 2 primv-) (PrimV '- 2 primv-))) #f)
 (check-exn #rx"SHEQ: Incorrect number of arguments" (lambda () (primvequal (list 3))))
 
+;; primvsubstr takes a String, a Real start, a Real Stop, and returns the substring of the String from start to stop
+(define (primvsubstr (args : (Listof Value))) : String
+  (match args
+    [(list s start stop)
+     (cond
+       [(and (string? s) (natural? start) (natural? stop) (>= start 0) (< stop (string-length s)))
+        (substring s (inexact->exact start) (inexact->exact stop))]
+       [else
+        (error 'primvsubstr "SHEQ: Substring needs string and 2 valid natural indices, got ~a" args)])]
+    [_ (error 'primvsubstr "SHEQ: Incorrect number of arguments, expected 3, got ~a" (length args))])
+  )
+
+;; 
+(define (primvstrlen [args : (Listof Value)]) : Real
+  (match args
+    [(list s)
+     (if (string? s)
+         (string-length s)
+         (error 'primvstrlen "SHEQ: Syntax error, ~a is not a string" s))]
+    [_ (error 'primvstrlen "SHEQ: Incorrect number of arguments to strlen, expected 1, got ~a" (length args))]))
+
+;; primverror
+(define (primverror [args : (Listof Value)]) : Nothing
+  (match args
+    [(list v)
+     (error 'primverror "SHEQ: user-error ~a" (serialize v))]
+    [_ (error 'primverror "SHEQ: Incorrect number of arguments to error, expected 1, got ~a" (length args))]))
+
+
+
+
 ;; Top level environment
 (: top-env Env)
 (define top-env (list
@@ -140,12 +171,15 @@
                  (Binding '* (PrimV '* 2 primv*))
                  (Binding '/ (PrimV '/ 2 primv/))
                  (Binding '<= (PrimV '<= 2 primv<=))
-                 (Binding 'equal? (PrimV 'equal? 2 primvequal))))
+                 (Binding 'equal? (PrimV 'equal? 2 primvequal))
+                 (Binding 'substring (PrimV 'substring 3 primvsubstr))
+                 (Binding 'strlen (PrimV 'strlen 1 primvstrlen))
+                 (Binding 'error (PrimV 'error 1 primverror))))
 
 ;; ---- Keywords & Internal Functions
 
 ;; a list of key-words
-(define reserved-keywords '(if lambda let = in end :))
+(define reserved-keywords '(if lambda let = in end : else))
 
 
 ;; ---- Interpreters ----
@@ -177,6 +211,8 @@
 (check-equal? (serialize #t) "true")
 (check-equal? (serialize (CloV '(x) (NumC 34) top-env)) "#<procedure>")
 (check-equal? (serialize (PrimV '<= 2 primv<=)) "#<primop>")
+
+(check-exn #rx"SHEQ: user-error true" (lambda () (primverror (list #t))))
 
 ;;
 #; (define (interp-args [args : (Listof ExprC)] [env : Env] [bindings : (Listof Binding)]) : (Listof Binding)
