@@ -27,7 +27,7 @@
 (define-type Env (Listof Binding))
 
 ;; ExprC type : NumC, BinOpC, IfC, IdC, AppC
-(define-type ExprC (U NumC  IfC IdC AppC LamC))
+(define-type ExprC (U NumC IfC IdC AppC LamC))
 
 ;; NumC : a Real
 (struct NumC ([n : Real]) #:transparent)
@@ -43,8 +43,6 @@
 
 ;; FundefC : a function definition
 (struct FundefC ([name : Symbol] [args : (Listof Symbol)] [body : ExprC]) #:transparent)
-
-
 
 ;; primv+ takes a list of Values, returns Real
 (define (primv+ [args : (Listof Value)]) : Real
@@ -214,7 +212,14 @@
   ; body
   (match e
     [(NumC n) n]
-    [(IfC v l r) (if (<= (num-value (interp v env)) 0) (interp l env) (interp r env))]
+    [(IfC v if-t if-f)
+     (define test-val (interp v env))
+     (cond
+       [(boolean? test-val)
+        (if test-val
+            (interp if-t env)
+            (interp if-f env))]
+       [else (error 'interp "SHEQ: If expected boolean test, got ~a" test-val)])]
     [(LamC params body) (CloV params body env)]
     [(AppC lam args)
      (define f-val (interp lam env))
@@ -237,20 +242,11 @@
                      
     [(IdC id) (get-binding-val id env)]))
 
-(check-equal? (interp (AppC (LamC '(x) (AppC (IdC '+) (list (IdC 'x) (NumC 1))))
-                            (list (NumC 5))) top-env) 6)
-(check-exn #rx"SHEQ: Incorrect number of arguments"
-           (lambda ()
-             (interp (AppC (LamC '(x)
-                                 (AppC (IdC '+) (list (IdC 'x) (NumC 1) (NumC 2))))
-                           (list (NumC 5))) top-env)))
-(check-exn #rx"SHEQ: Attempted to apply non function value"
-           (lambda ()
-             (interp (AppC (NumC 9) (list (NumC 12))) top-env))) 
+
 
 
 ;; reserved-symbol? - Determines if a given symbol is in the reserved keywords
-;; (+, -, /, *, def, ifleq0?, :)
+;; (+, -, /, *, def, ifleq0?, :) 
 (define (reserved-symbol? [s : Symbol]) : Boolean
   (if (memq s reserved-keywords)
       #t
@@ -276,7 +272,9 @@
     [(? symbol? name)
      (if (reserved-symbol? name)
          (error 'parse "SHEQ: Syntax error, unexpected reserved keyword, got ~e" name)
-         (IdC name))] 
+         (IdC name))]
+    [(list 'if v iftrue iffalse)
+     (IfC (parse v) (parse iftrue) (parse  iffalse))]
     [(list 'lambda (list (? symbol? params) ...) ': body)
      (LamC (cast params (Listof Symbol)) (parse body))]
     
@@ -284,6 +282,7 @@
      (AppC (parse f) (for/list : (Listof ExprC) ([a args]) (parse a)))]
     [other (error 'parse "SHEQ: Syntax error, got ~e" other)]))
 
+(check-equal? (parse '{if {<= 3 90} 3 90}) (IfC (AppC (IdC '<=) (list (NumC 3) (NumC 90))) (NumC 3) (NumC 90)))
 
 ;; ---- Helper functions ----
 
@@ -355,10 +354,17 @@
                                            (AppC (IdC '*) (list (NumC 10) (IdC 'x)))
                                            top-env)))) 30)
 
-;; ---- interp error check - unbound id's ----
+(check-equal? (interp (AppC (IdC '<=) (list (NumC 9) (NumC 10))) top-env) #t)
+(check-equal? (interp (AppC (IdC 'equal?) (list (NumC 9) (NumC 10))) top-env) #f)
+(check-equal? (interp (AppC (IdC 'equal?) (list (NumC 9) (NumC 10))) top-env) #f)
+(check-equal? (interp (IfC (AppC (IdC '<=) (list (NumC 5) (NumC 2))) (NumC 1) (NumC -1)) top-env) -1)
+
+
+;; ---- interp error check ---- 
 (check-exn #rx"SHEQ: An unbound identifier" (lambda () (interp (IdC 'x) '())))
 (check-exn #rx"SHEQ: PrimV \\+ expected 2 numbers" (lambda () (interp (AppC (IdC '+) (list (IdC '-) (NumC 4))) top-env)))
 (check-exn #rx"SHEQ: Divide by zero error" (lambda () (interp (AppC (IdC '/) (list (NumC 5) (NumC 0))) top-env)))
+(check-exn #rx"SHEQ: If expected boolean test" (lambda () (interp (parse '{if 32 23 32}) top-env))) 
 
 
 ;; ---- Recursion Test ----
@@ -392,6 +398,20 @@
 (check-equal? (parse 'double) (IdC 'double))
 (check-equal? (parse '{double x 2}) (AppC (IdC 'double) (list (IdC 'x) (NumC 2))))
 (check-equal? (parse '{ifleq0? 5 x y}) (AppC (IdC 'ifleq0?) (list (NumC 5) (IdC 'x) (IdC 'y))))
+
+(check-equal? (interp (AppC (LamC '(x) (AppC (IdC '+) (list (IdC 'x) (NumC 1))))
+                            (list (NumC 5))) top-env) 6)
+
+(check-equal? (interp (IfC (AppC (IdC 'equal?) (list (NumC 81) (NumC 81))) (IdC 'true) (IdC 'false)) top-env) #t)
+
+(check-exn #rx"SHEQ: Incorrect number of arguments"
+           (lambda ()
+             (interp (AppC (LamC '(x)
+                                 (AppC (IdC '+) (list (IdC 'x) (NumC 1) (NumC 2))))
+                           (list (NumC 5))) top-env)))
+(check-exn #rx"SHEQ: Attempted to apply non function value"
+           (lambda ()
+             (interp (AppC (NumC 9) (list (NumC 12))) top-env)))
 
 ; parse error checking
 (check-exn #rx"SHEQ: Syntax error, got"
