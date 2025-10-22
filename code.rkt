@@ -392,9 +392,9 @@
 #;(check-equal? (top-interp '{{def main() : {ifleq0? -1 10 -10}}}) 10)
 
 ;; divide by zero error test case (from handin)
-#;(check-exn #rx"SHEQ: Divide by zero error"
+(check-exn #rx"SHEQ: Divide by zero error"
              (lambda () (top-interp
-                         '{{def ignoreit (x) : {+ 7 15}} {def main () : {ignoreit {/ 52 (+ 0 0)}}}})))
+                         '{{lambda (ignoreit) : {ignoreit {/ 52 {+ 0 0}}}} {lambda (x) : {+ 7 x}}})))
 
 #;(check-exn #rx"SHEQ:"
              (lambda () (top-interp '{{def f (x) : {+ x 2}} {def main () : {f 1 2 3}}})))
