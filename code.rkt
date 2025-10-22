@@ -15,7 +15,7 @@
 (struct CloV ([params : (Listof Symbol)] [body : ExprC] [env : Env]) #:transparent)
 
 ;; PrimV - Primitive Value types
-(struct PrimV ([op : Symbol] [num-args : Natural] [func : (-> (Listof Value) Value)]) #:transparent)
+(struct PrimV ([op : Symbol]) #:transparent)
 
 ;; LamC - Lambdas
 (struct LamC ([args : (Listof Symbol)] [body : ExprC]) #:transparent)
@@ -47,152 +47,98 @@
 ;; FundefC : a function definition
 (struct FundefC ([name : Symbol] [args : (Listof Symbol)] [body : ExprC]) #:transparent)
 
-;; primv+ takes a list of Values, returns Real
-(define (primv+ [args : (Listof Value)]) : Real
-  (match args
-    [(list a b)
-     (cond
-       [(and (real? a) (real? b)) (+ a b)]
-       [else (error 'primv+ "SHEQ: PrimV + expected 2 numbers, got ~a" args)])]
-    [_ (error 'primv+ "SHEQ: Incorrect number of arguments")]))
-
-(check-equal? (primv+ (list 8 9)) 17)
-(check-exn #rx"SHEQ: PrimV \\+ expected 2 numbers, got" (lambda () (primv+ (list 8 #t))))
-(check-exn #rx"SHEQ: Incorrect number of arguments" (lambda () (primv+ (list 8 23 3 2))))
-
-;; primv* takes a list of Values, returns Real
-(define (primv* [args : (Listof Value)]) : Real
-  (match args
-    [(list a b)
-     (cond
-       [(and (real? a) (real? b)) (* a b)]
-       [else (error 'primv* "SHEQ: PrimV * expected 2 numbers, got ~a" args)])]
-    [_ (error 'primv* "SHEQ: Incorrect number of arguments")]))
-
-(check-equal? (primv* (list 8 4)) 32)
-(check-exn #rx"SHEQ: PrimV \\* expected 2 numbers, got" (lambda () (primv* (list #f #t))))
-(check-exn #rx"SHEQ: Incorrect number of arguments" (lambda () (primv* (list 2))))
-
-;; primv/ takes a list of Values, returns Real
-(define (primv/ [args : (Listof Value)]) : Real
-  (match args
-    [(list a b)
-     (cond
-       [(and (real? a) (real? b) (not (equal? b 0))) (/ a b)]
-       [(and (real? a) (real? b) (equal? b 0))
-        (error 'primv/ "SHEQ: Divide by zero error")]
-       [else (error 'primv/ "SHEQ: PrimV / expected 2 numbers, got ~a" args)])]
-    [_ (error 'primv/ "SHEQ: Incorrect number of arguments")]))
-
-(check-equal? (primv/ (list 33 11)) 3)
-(check-exn #rx"SHEQ: PrimV \\/ expected 2 numbers, got" (lambda () (primv/ (list #f #t))))
-(check-exn #rx"SHEQ: Divide by zero error" (lambda () (primv/ (list 3 0)))) 
-(check-exn #rx"SHEQ: Incorrect number of arguments" (lambda () (primv/ (list 21 2 3))))
-
-;; primv- takes a list of Values, returns Real
-(define (primv- [args : (Listof Value)]) : Real
-  (match args
-    [(list a b)
-     (cond
-       [(and (real? a) (real? b)) (- a b)]
-       [else (error 'primv- "SHEQ: PrimV - expected 2 numbers, got ~a" args)])]
-    [_ (error 'primv- "SHEQ: Incorrect number of arguments")]))
-
-(check-equal? (primv- (list 33 11)) 22)
-(check-exn #rx"SHEQ: PrimV \\- expected 2 numbers, got" (lambda () (primv- (list #f #t))))
-(check-exn #rx"SHEQ: Incorrect number of arguments" (lambda () (primv- (list 9 3 2 1 3))))
-
-;; primv<= takes a list of Values, returns Boolean if arg1 <= arg2
-(define (primv<= [args : (Listof Value)]) : Boolean
-  (match args
-    [(list a b)
-     (cond
-       [(and (real? a) (real? b)) (<= a b)]
-       [else (error 'primv<= "SHEQ: PrimV <= expected 2 numbers, got ~a" args)])]
-    [_ (error 'primv- "SHEQ: Incorrect number of arguments")]))
-
-(check-equal? (primv<= (list 3 11)) #t)
-(check-equal? (primv<= (list 3 -11)) #f)
-(check-exn #rx"SHEQ: PrimV \\<= expected 2 numbers, got" (lambda () (primv<= (list #f #t))))
-(check-exn #rx"SHEQ: Incorrect number of arguments" (lambda () (primv<= (list 3))))
-
-;; primvequal takes a list of Values, returns Boolean if arg1 == arg2 or false if either is PrimV/CloV
-(define (primvequal [args : (Listof Value)]) : Boolean
-  (match args
-    [(list a b)
-     (cond [(or (CloV? a) (CloV? b) (PrimV? a) (PrimV? b)) #f]
-           
-           [else (equal? a b)])]
-    [_ (error 'primvequal "SHEQ: Incorrect number of arguments")]))
-
-(check-equal? (primvequal (list 9 9)) #t)
-(check-equal? (primvequal (list #f #f)) #t)
-(check-equal? (primvequal (list "hi" "hi")) #t)
-(check-equal? (primvequal (list 3 #f)) #f)
-(check-equal? (primvequal (list (CloV '(x) (NumC 1) '()) (CloV '(x) (NumC 1) '()))) #f)
-(check-equal? (primvequal (list (PrimV '- 2 primv-) (PrimV '- 2 primv-))) #f)
-(check-exn #rx"SHEQ: Incorrect number of arguments" (lambda () (primvequal (list 3))))
-
-;; primvsubstr takes a String, a Real start, a Real Stop, and returns the substring of the String from start to stop
-(define (primvsubstr (args : (Listof Value))) : String
-  (match args
-    [(list s start stop)
-     (cond
-       [(and (string? s)
-             (natural? start)
-             (natural? stop)
-             (>= start 0)
-             (< start (string-length s))
-             (>= stop 0)
-             (< stop (string-length s)))
-        (substring s (inexact->exact start) (inexact->exact stop))]
-       [else
-        (error 'primvsubstr "SHEQ: Substring needs string and 2 valid natural indices, got ~a" args)])]
-    [_ (error 'primvsubstr "SHEQ: Incorrect number of arguments, expected 3, got ~a" (length args))])
-  )
-(check-equal? (primvsubstr (list "hello world!" 0 5)) "hello")
-(check-exn #rx"SHEQ: Substring needs string and 2 valid natural indices" (lambda () (primvsubstr (list "hello" 99 1))))
-(check-exn #rx"SHEQ: Incorrect number of arguments, expected 3" (lambda () (primvsubstr (list "bib" 0 1 23 3))))
-
-
-;; primvstrlen - helper function takes a Listof Value, returns a Real (length of the string inside the List)
-(define (primvstrlen [args : (Listof Value)]) : Real
-  (match args
-    [(list s)
-     (if (string? s)
-         (string-length s)
-         (error 'primvstrlen "SHEQ: Syntax error, ~a is not a string" s))]
-    [_ (error 'primvstrlen "SHEQ: Incorrect number of arguments, expected 1, got ~a" (length args))]))
-
-(check-equal? (primvstrlen (list "hello world!")) 12)
-(check-exn #rx"SHEQ: Syntax error" (lambda () (primvstrlen (list 3))))
-(check-exn #rx"SHEQ: Incorrect number of arguments, expected 1" (lambda () (primvstrlen (list "bib" "five" 3))))
-
-
-;; primverror - takes a Listof Value, throws a user-created error
-(define (primverror [args : (Listof Value)]) : Nothing
-  (match args
-    [(list v)
-     (error 'primverror "SHEQ: user-error ~a" (serialize v))]
-    [_ (error 'primverror "SHEQ: Incorrect number of arguments, expected 1, got ~a" (length args))]))
-
-(check-exn #rx"SHEQ: Incorrect number of arguments, expected 1" (lambda () (primverror (list "This" "too many"))))
-
-
 ;; Top level environment
 (: top-env Env)
 (define top-env (list
                  (Binding 'true #t)
                  (Binding 'false #f)
-                 (Binding '+ (PrimV '+ 2 primv+))
-                 (Binding '- (PrimV '- 2 primv-))
-                 (Binding '* (PrimV '* 2 primv*))
-                 (Binding '/ (PrimV '/ 2 primv/))
-                 (Binding '<= (PrimV '<= 2 primv<=))
-                 (Binding 'equal? (PrimV 'equal? 2 primvequal))
-                 (Binding 'substring (PrimV 'substring 3 primvsubstr))
-                 (Binding 'strlen (PrimV 'strlen 1 primvstrlen))
-                 (Binding 'error (PrimV 'error 1 primverror))))
+                 (Binding '+ (PrimV '+))
+                 (Binding '- (PrimV '-))
+                 (Binding '* (PrimV '*))
+                 (Binding '/ (PrimV '/))
+                 (Binding '<= (PrimV '<=))
+                 (Binding 'equal? (PrimV 'equal?))
+                 (Binding 'substring (PrimV 'substring))
+                 (Binding 'strlen (PrimV 'strlen))
+                 (Binding 'error (PrimV 'error))))
+
+;; interp-prim - takes a PrimV and a list of Values, returns a Value
+(define (interp-prim [p : PrimV] [args : (Listof Value)]) : Value
+  (match (PrimV-op p)
+    ['+
+     (match args
+       [(list a b)
+        (cond
+          [(and (real? a) (real? b)) (+ a b)]
+          [else (error 'interp-prim "SHEQ: PrimV + expected 2 numbers, got ~a" args)])]
+       [_ (error 'interp-prim "SHEQ: Incorrect number of arguments")])]
+    ['*
+     (match args
+       [(list a b)
+        (cond
+          [(and (real? a) (real? b)) (* a b)]
+          [else (error 'interp-prim "SHEQ: PrimV * expected 2 numbers, got ~a" args)])]
+       [_ (error 'interp-prim "SHEQ: Incorrect number of arguments")])]
+    ['-
+     (match args
+       [(list a b)
+        (cond
+          [(and (real? a) (real? b)) (- a b)]
+          [else (error 'interp-prim "SHEQ: PrimV - expected 2 numbers, got ~a" args)])]
+       [_ (error 'interp-prim "SHEQ: Incorrect number of arguments")])]
+    ['/
+     (match args
+       [(list a b)
+        (cond
+          [(and (real? a) (real? b) (not (equal? b 0))) (/ a b)]
+          [(and (real? a) (real? b) (equal? b 0))
+           (error 'interp-prim "SHEQ: Divide by zero error")]
+          [else (error 'interp-prim "SHEQ: PrimV / expected 2 numbers, got ~a" args)])]
+       [_ (error 'interp-prim "SHEQ: Incorrect number of arguments")])]
+    ['<=
+     (match args
+       [(list a b)
+        (cond
+          [(and (real? a) (real? b)) (<= a b)]
+          [else (error 'interp-prim "SHEQ: PrimV <= expected 2 numbers, got ~a" args)])]
+       [_ (error 'interp-prim "SHEQ: Incorrect number of arguments")])]
+    ['equal?
+     (match args
+       [(list a b)
+        (cond [(or (CloV? a) (CloV? b) (PrimV? a) (PrimV? b)) #f]
+           
+              [else (equal? a b)])]
+       [_ (error 'interp-prim "SHEQ: Incorrect number of arguments")])]
+    ['substring
+     (match args
+       [(list s start stop)
+        (cond
+          [(and (string? s)
+                (natural? start)
+                (natural? stop)
+                (>= start 0)
+                (< start (string-length s))
+                (>= stop 0)
+                (< stop (string-length s)))
+           (substring s (inexact->exact start) (inexact->exact stop))]
+          [else
+           (error 'interp-prim "SHEQ: Substring needs string and 2 valid natural indices, got ~a" args)])]
+       [_ (error 'interp-prim "SHEQ: Incorrect number of arguments, expected 3, got ~a" (length args))])]
+    ['strlen
+     (match args
+       [(list s)
+        (if (string? s)
+            (string-length s)
+            (error 'interp-prim "SHEQ: Syntax error, ~a is not a string" s))]
+       [_ (error 'interp-prim "SHEQ: Incorrect number of arguments, expected 1, got ~a" (length args))])]
+    ['error
+     (match args
+       [(list v)
+        (error 'interp-prim "SHEQ: user-error ~a" (serialize v))]
+       [_ (error 'interp-prim "SHEQ: Incorrect number of arguments, expected 1, got ~a" (length args))])]
+    [_
+     (error 'interp-prim "SHEQ: Invalid PrimV op, got ~a" args)]))
+
 
 ;; ---- Keywords & Internal Functions
 
@@ -225,15 +171,15 @@
                         "false")]
     [(? string? s) (~v s)]
     [(CloV _ _ _) "#<procedure>"]
-    [(PrimV _ _ _) "#<primop>"]))
+    [(PrimV _) "#<primop>"]))
 
 (check-equal? (serialize '32) "32")
 (check-equal? (serialize #f) "false")
 (check-equal? (serialize #t) "true")
 (check-equal? (serialize (CloV '(x) (NumC 34) top-env)) "#<procedure>")
-(check-equal? (serialize (PrimV '<= 2 primv<=)) "#<primop>")
+(check-equal? (serialize (PrimV '<=)) "#<primop>")
 
-(check-exn #rx"SHEQ: user-error true" (lambda () (primverror (list #t))))
+(check-exn #rx"SHEQ: user-error true" (lambda () (interp-prim (PrimV 'error) (list #t))))
 ;;
 #; (define (interp-args [args : (Listof ExprC)] [env : Env] [bindings : (Listof Binding)]) : (Listof Binding)
      (match args
@@ -285,21 +231,19 @@
          (interp a env)))
      (cond
        [(CloV? f-val)
-        (define new-env
-          (append (map Binding (CloV-params f-val) arg-vals)
-                  (CloV-env f-val)))
-        (interp (CloV-body f-val) new-env)]
+        (if (equal? (length arg-vals) (length (CloV-params f-val)))
+            (interp (CloV-body f-val)
+                    (append (map Binding (CloV-params f-val) arg-vals)
+                            (CloV-env f-val)))
+            (error 'interp "SHEQ: Incorrect number of arguments for CloV, got ~a expected ~a"
+                   (length (CloV-params f-val))
+                   (length arg-vals)))]
+        
        [(PrimV? f-val)
-        (if (equal? (PrimV-num-args f-val) (length arg-vals))
-            ((PrimV-func f-val) arg-vals)
-            (error 'interp "SHEQ: Incorrect number of arguments to ~a, expected ~a but got ~a"
-                   (PrimV-op f-val) (PrimV-num-args f-val) (length arg-vals)))]
+        (interp-prim f-val arg-vals)]
        [else
-        (error 'interp "SHEQ: Attempted to apply non function value ~a" f-val)])]
-                     
+        (error 'interp "SHEQ: Attempted to apply non function value ~a" f-val)])]         
     [(IdC id) (get-binding-val id env)]))
-
-
 
 
 ;; reserved-symbol? - Determines if a given symbol is in the reserved keywords
@@ -336,15 +280,23 @@
            'in
            in-body
            'end)
-     (AppC 
-      (LamC (cast args (Listof Symbol)) (parse in-body)) 
-      (for/list : (Listof ExprC) ([v vals]) 
-        (parse (cast v Sexp))))]
+     (define args-list (cast args (Listof Symbol)))
+     (cond
+       [(not (distinct-args? args-list))
+        (error 'parse "SHEQ: Let binding list is invalid, duplicate variables ~a" args-list)]
+       [(ormap reserved-symbol? args-list)
+        (error 'parse "SHEQ: let binding list is invalid, reserved symbol was used ~a" args-list)]
+       [else (AppC 
+              (LamC (cast args (Listof Symbol)) (parse in-body)) 
+              (for/list : (Listof ExprC) ([v vals]) 
+                (parse (cast v Sexp))))])]
     [(list 'if v iftrue iffalse)
      (IfC (parse v) (parse iftrue) (parse  iffalse))]
-    [(list 'lambda (list (? symbol? params) ...) ': body)
-     (LamC (cast params (Listof Symbol)) (parse body))]
-    
+    [(list 'lambda (list (? symbol? args) ...) ': body)
+     (define args-list (cast args (Listof Symbol)))
+     (if (distinct-args? args-list)
+         (LamC (cast args (Listof Symbol)) (parse body))
+         (error 'parse "SHEQ: Lambda args list is invalid, duplicate parameters found, ~a" args-list))]
     [(list f args ...)
      (AppC (parse f) (for/list : (Listof ExprC) ([a args]) (parse a)))]
     [other (error 'parse "SHEQ: Syntax error, got ~e" other)]))
@@ -381,42 +333,38 @@
 ; The program calculates two areas using two different functions, and then compares them.
 ;; The result is the result of the comparison
 (define prog '{
-               {def square (x) : {* x x}}
-               {def area (w h) : {* w h}}
-               {def gt (v1 v2 t f) : {ifleq0? {- v2 v1} t f}}
-               {def main () : {gt {square 4} {area 4 3} 0 1}}
-               })
-#; (check-equal? (top-interp prog) 0)
+               let
+                  {[square = {lambda (x) : {* x x}}]
+                   [area = {lambda (w h) : {* w h}}]
+                   [gt = {lambda (v1 v2 t f) : {if {<= v1 v2} t f}}]}
+                in
+                {gt {square 4} {area 4 3} 0 1}
+                end})
+(check-equal? (top-interp prog) "1")
 
 ;; ---- top-interp Tests ----
 (check-equal? (top-interp '{+ 3 2}) "5")
 (check-equal? (top-interp '{if {<= 5 10} "less than" "not less than"}) "\"less than\"")
 
+(check-equal? (top-interp 
+               '{let {[x = 5]
+                      [y = {+ 8 9}]}
+                  in
+                  {+ x {* y {let {[x = 3]}
+                              in
+                              {+ x x}
+                              end}}}
+                  end
+                  }) "107")
 
-
-; (top-interp '{def main () : {+ 1 {* 2 2}}})
-#;(check-equal? (top-interp '{
-                              {def main () : {+ 1 {* 2 2}}}
-                              }) 5)
-
-#;(check-equal? (top-interp '{
-                              {def main () : {* 2 {/ 1 2}}}}) 1)
-
-#;(check-equal? (top-interp '{{def main () : {ifleq0? 1 10 -10}}}) -10)
-
-#;(check-equal? (top-interp '{{def main() : {ifleq0? -1 10 -10}}}) 10)
+;; incorect num of arguments (from handin)
+(check-exn #rx"SHEQ: Incorrect number of arguments for CloV"
+           (lambda () (top-interp '{{lambda () : 19} 17})))
 
 ;; divide by zero error test case (from handin)
 (check-exn #rx"SHEQ: Divide by zero error"
            (lambda () (top-interp
                        '{{lambda (ignoreit) : {ignoreit {/ 52 {+ 0 0}}}} {lambda (x) : {+ 7 x}}})))
-
-#;(check-exn #rx"SHEQ:"
-             (lambda () (top-interp '{{def f (x) : {+ x 2}} {def main () : {f 1 2 3}}})))
-
-;; top-interp error check empty
-#; (check-exn #rx"SHEQ: Syntax error, got"
-              (lambda () (top-interp '{ {def main () : {}}})))
 
 ;; ---- interp tests ----
 (check-equal? (interp (IdC 'true) top-env) #t)
@@ -451,23 +399,8 @@
                  {def main () : {minusTil0 15}}
                  })
 
-#; (check-equal? (interp-fns (list
-                              (FundefC 'minusTil0
-                                       '(x)
-                                       (IfC (IdC 'x)
-                                            (IdC 'x)
-                                            (AppC 'minusTil0 (list (BinOpC '- (IdC 'x) (NumC 10))))))
-                              (FundefC 'main '() (AppC 'minusTil0 (list (NumC 1001)))))) -9)
-
-
-;; ---- interp-bin-op tests ----
-;(check-equal? (interp-bin-op '* (NumC 2) (NumC 5) '()) 10)
-
-;; throws Divide by zero error
-;(check-exn #rx"SHEQ: Divide by zero error" (lambda () (interp-bin-op '/ (NumC 43) (NumC 0) '())))
-
-
 ;; ---- parse Tests ----
+
 (check-equal? (parse '{(lambda (x) : {+ x 1}) 5})
               (AppC (LamC '(x) (AppC (IdC '+) (list (IdC 'x) (NumC 1)))) (list (NumC 5))))
 (check-equal? (parse '{+ 5 12}) (AppC (IdC '+) (list (NumC 5) (NumC 12))))
@@ -479,7 +412,26 @@
               (AppC 
                (LamC (list 'x 'y) (AppC (IdC '+) (list (IdC 'x) (IdC 'y)))) 
                (list (NumC 5) 
-                     (AppC (IdC '*) (list (NumC 7) (NumC 8)))))) 
+                     (AppC (IdC '*) (list (NumC 7) (NumC 8))))))
+
+;; parse errors
+(check-exn #rx"SHEQ: Lambda args list is invalid, duplicate parameters found"
+           (lambda () (parse '(lambda (x y x) : 33))))
+(check-exn #rx"SHEQ: Let binding list is invalid, duplicate variables"
+           (lambda () (parse '(let {[bo = {lambda () : 33}] [bo = "Twenty"]} in {bo} end))))
+(check-exn #rx"SHEQ: let binding list is invalid, reserved symbol was used"
+           (lambda () (parse '(let {[if = {lambda () : 0}]} in {if 3} end))))
+
+(check-exn #rx"SHEQ: Syntax error, got"
+           (lambda () (parse '{})))
+
+(check-exn #rx"SHEQ: Syntax error, unexpected reserved keyword, got"
+           (lambda () (parse '{let 2})))
+
+(check-exn #rx"SHEQ: Syntax error, unexpected reserved keyword, got"
+           (lambda () (parse '{end 3 4 3 2})))
+
+(check-exn #rx"SHEQ: Syntax error, unexpected reserved keyword, got" (lambda () (parse '=)))
 
 ;; ---- interp Tests ----
 (check-equal? (interp (AppC (LamC '(x) (AppC (IdC '+) (list (IdC 'x) (NumC 1))))
@@ -497,28 +449,73 @@
            (lambda ()
              (interp (AppC (NumC 9) (list (NumC 12))) top-env)))
 
-; parse error checking
-(check-exn #rx"SHEQ: Syntax error, got"
-           (lambda () (parse '{})))
+;; ---- intper-prim Tests ----
+;; PrimV '+ tests
+(check-equal? (interp-prim (PrimV '+) (list 8 9)) 17)
+(check-exn #rx"SHEQ: PrimV \\+ expected 2 numbers, got" (lambda () (interp-prim (PrimV '+) (list 8 #t))))
+(check-exn #rx"SHEQ: Incorrect number of arguments" (lambda () (interp-prim (PrimV '+) (list 8 23 3 2))))
 
-(check-exn #rx"SHEQ: Syntax error, unexpected reserved keyword, got"
-           (lambda () (parse '{let 2})))
+;; PrimV '* tests
+(check-equal? (interp-prim (PrimV '*) (list 8 4)) 32)
+(check-exn #rx"SHEQ: PrimV \\* expected 2 numbers, got" (lambda () (interp-prim (PrimV '*) (list #f #t))))
+(check-exn #rx"SHEQ: Incorrect number of arguments" (lambda () (interp-prim (PrimV '*) (list 2))))
 
-(check-exn #rx"SHEQ: Syntax error, unexpected reserved keyword, got"
-           (lambda () (parse '{end 3 4 3 2})))
+;; PrimV '/ tests
+(check-equal? (interp-prim (PrimV '/) (list 33 11)) 3)
+(check-exn #rx"SHEQ: PrimV \\/ expected 2 numbers, got"
+           (lambda () (interp-prim (PrimV '/) (list #f #t))))
+(check-exn #rx"SHEQ: Divide by zero error"
+           (lambda () (interp-prim (PrimV '/) (list 3 0)))) 
+(check-exn #rx"SHEQ: Incorrect number of arguments"
+           (lambda () (interp-prim (PrimV '/) (list 21 2 3))))
 
-(check-exn #rx"SHEQ: Syntax error, unexpected reserved keyword, got" (lambda () (parse '=)))
+;; PrimV '- tests
+(check-equal? (interp-prim (PrimV '-) (list 33 11)) 22)
+(check-exn #rx"SHEQ: PrimV \\- expected 2 numbers, got"
+           (lambda () (interp-prim (PrimV '-) (list #f #t))))
+(check-exn #rx"SHEQ: Incorrect number of arguments"
+           (lambda () (interp-prim (PrimV '-) (list 9 3 2 1 3))))
 
-(check-equal? (top-interp 
-               '{let {[x = 5]
-                      [y = {+ 8 9}]}
-                  in
-                  {+ x {* y {let {[x = 3]}
-                              in
-                              {+ x x}
-                              end}}}
-                  end
-                  }) "107")
+;; PrimV '<= tests
+(check-equal? (interp-prim (PrimV '<=) (list 3 11)) #t)
+(check-equal? (interp-prim (PrimV '<=) (list 3 -11)) #f)
+(check-exn #rx"SHEQ: PrimV \\<= expected 2 numbers, got"
+           (lambda () (interp-prim (PrimV '<=) (list #f #t))))
+(check-exn #rx"SHEQ: Incorrect number of arguments"
+           (lambda () (interp-prim (PrimV '<=) (list 3))))
+
+;; PrimV 'equal? tests
+(check-equal? (interp-prim (PrimV 'equal?) (list 9 9)) #t)
+(check-equal? (interp-prim (PrimV 'equal?) (list #f #f)) #t)
+(check-equal? (interp-prim (PrimV 'equal?) (list "hi" "hi")) #t)
+(check-equal? (interp-prim (PrimV 'equal?) (list 3 #f)) #f)
+(check-equal? (interp-prim (PrimV 'equal?)
+                           (list (CloV '(x) (NumC 1) '()) (CloV '(x) (NumC 1) '()))) #f)
+(check-equal? (interp-prim (PrimV 'equal?)
+                           (list (PrimV '-) (PrimV '-))) #f)
+(check-exn #rx"SHEQ: Incorrect number of arguments"
+           (lambda () (interp-prim (PrimV 'equal?) (list 3))))
+
+;; PrimV 'substring tests
+(check-equal? (interp-prim (PrimV 'substring) (list "hello world!" 0 5)) "hello")
+(check-exn #rx"SHEQ: Substring needs string and 2 valid natural indices"
+           (lambda () (interp-prim (PrimV 'substring) (list "hello" 99 1))))
+(check-exn #rx"SHEQ: Incorrect number of arguments, expected 3"
+           (lambda () (interp-prim (PrimV 'substring) (list "bib" 0 1 23 3))))
+
+;; PrimV 'strlen tests
+(check-equal? (interp-prim (PrimV 'strlen) (list "hello world!")) 12)
+(check-exn #rx"SHEQ: Syntax error" (lambda () (interp-prim (PrimV 'strlen) (list 3))))
+(check-exn #rx"SHEQ: Incorrect number of arguments, expected 1"
+           (lambda () (interp-prim (PrimV 'strlen) (list "bib" "five" 3))))
+
+;; PrimV 'error test
+(check-exn #rx"SHEQ: Incorrect number of arguments, expected 1"
+           (lambda () (interp-prim (PrimV 'error) (list "This" "too many"))))
+
+;; PrimV invalid PrimV test
+(check-exn #rx"SHEQ: Invalid PrimV op"
+           (lambda () (interp-prim (PrimV 'dothis) (list 9))))
 
 
 ;; ---- Helper Tests ----
