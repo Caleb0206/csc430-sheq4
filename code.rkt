@@ -162,10 +162,10 @@
 
 ;;
 #; (define (interp-args [args : (Listof ExprC)] [env : Env] [bindings : (Listof Binding)]) : (Listof Binding)
-  (match args
-    ['() '()]
-    [(cons arg r) (cons (Binding arg (interp arg)))]
-    [_ (error 'interp-args "SHEQ: idk yet")]))
+     (match args
+       ['() '()]
+       [(cons arg r) (cons (Binding arg (interp arg)))]
+       [_ (error 'interp-args "SHEQ: idk yet")]))
 
 
 
@@ -221,7 +221,7 @@
                   val)]))
 
 (check-equal? (interp (AppC (LamC '(x) (AppC (IdC '+) (list (IdC 'x) (NumC 1))))
-              (list (NumC 5))) top-env) 6)
+                            (list (NumC 5))) top-env) 6)
 
 ;; reserved-symbol? - Determines if a given symbol is in the reserved keywords
 ;; (+, -, /, *, def, ifleq0?, :)
@@ -295,11 +295,11 @@
 ;; ---- top-interp Tests ----
 ; (top-interp '{def main () : {+ 1 {* 2 2}}})
 #;(check-equal? (top-interp '{
-                            {def main () : {+ 1 {* 2 2}}}
-                            }) 5)
+                              {def main () : {+ 1 {* 2 2}}}
+                              }) 5)
 
 #;(check-equal? (top-interp '{
-                            {def main () : {* 2 {/ 1 2}}}}) 1)
+                              {def main () : {* 2 {/ 1 2}}}}) 1)
 
 #;(check-equal? (top-interp '{{def main () : {ifleq0? 1 10 -10}}}) -10)
 
@@ -307,15 +307,15 @@
 
 ;; divide by zero error test case (from handin)
 #;(check-exn #rx"SHEQ: Divide by zero error"
-           (lambda () (top-interp
-                       '{{def ignoreit (x) : {+ 7 15}} {def main () : {ignoreit {/ 52 (+ 0 0)}}}})))
+             (lambda () (top-interp
+                         '{{def ignoreit (x) : {+ 7 15}} {def main () : {ignoreit {/ 52 (+ 0 0)}}}})))
 
 #;(check-exn #rx"SHEQ:"
-           (lambda () (top-interp '{{def f (x) : {+ x 2}} {def main () : {f 1 2 3}}})))
+             (lambda () (top-interp '{{def f (x) : {+ x 2}} {def main () : {f 1 2 3}}})))
 
 ;; top-interp error check empty
 #; (check-exn #rx"SHEQ: Syntax error, got"
-           (lambda () (top-interp '{ {def main () : {}}})))
+              (lambda () (top-interp '{ {def main () : {}}})))
 
 ;; ---- interp tests ----
 (check-equal? (interp (IdC 'true) top-env) #t)
@@ -343,12 +343,12 @@
                  })
 
 #; (check-equal? (interp-fns (list
-                           (FundefC 'minusTil0
-                                    '(x)
-                                    (IfC (IdC 'x)
-                                         (IdC 'x)
-                                         (AppC 'minusTil0 (list (BinOpC '- (IdC 'x) (NumC 10))))))
-                           (FundefC 'main '() (AppC 'minusTil0 (list (NumC 1001)))))) -9)
+                              (FundefC 'minusTil0
+                                       '(x)
+                                       (IfC (IdC 'x)
+                                            (IdC 'x)
+                                            (AppC 'minusTil0 (list (BinOpC '- (IdC 'x) (NumC 10))))))
+                              (FundefC 'main '() (AppC 'minusTil0 (list (NumC 1001)))))) -9)
 
 
 ;; ---- interp-bin-op tests ----
