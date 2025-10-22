@@ -138,7 +138,13 @@
   (match args
     [(list s start stop)
      (cond
-       [(and (string? s) (natural? start) (natural? stop) (>= start 0) (< start (string-length s)) (>= stop 0) (< stop (string-length s)))
+       [(and (string? s)
+             (natural? start)
+             (natural? stop)
+             (>= start 0)
+             (< start (string-length s))
+             (>= stop 0)
+             (< stop (string-length s)))
         (substring s (inexact->exact start) (inexact->exact stop))]
        [else
         (error 'primvsubstr "SHEQ: Substring needs string and 2 valid natural indices, got ~a" args)])]
@@ -325,15 +331,15 @@
      (if (reserved-symbol? name)
          (error 'parse "SHEQ: Syntax error, unexpected reserved keyword, got ~e" name)
          (IdC name))]
-	[(list 'let 
-		   (list (list (? symbol? args) '= vals) ...) 
-		   'in
-		   in-body
-		   'end)
-	 (AppC 
-	   (LamC (cast args (Listof Symbol)) (parse in-body)) 
-	   (for/list : (Listof ExprC) ([v vals]) 
-		 (parse (cast v Sexp))))]
+    [(list 'let 
+           (list (list (? symbol? args) '= vals) ...) 
+           'in
+           in-body
+           'end)
+     (AppC 
+      (LamC (cast args (Listof Symbol)) (parse in-body)) 
+      (for/list : (Listof ExprC) ([v vals]) 
+        (parse (cast v Sexp))))]
     [(list 'if v iftrue iffalse)
      (IfC (parse v) (parse iftrue) (parse  iffalse))]
     [(list 'lambda (list (? symbol? params) ...) ': body)
@@ -402,8 +408,8 @@
 
 ;; divide by zero error test case (from handin)
 (check-exn #rx"SHEQ: Divide by zero error"
-             (lambda () (top-interp
-                         '{{lambda (ignoreit) : {ignoreit {/ 52 {+ 0 0}}}} {lambda (x) : {+ 7 x}}})))
+           (lambda () (top-interp
+                       '{{lambda (ignoreit) : {ignoreit {/ 52 {+ 0 0}}}} {lambda (x) : {+ 7 x}}})))
 
 #;(check-exn #rx"SHEQ:"
              (lambda () (top-interp '{{def f (x) : {+ x 2}} {def main () : {f 1 2 3}}})))
@@ -432,7 +438,8 @@
 
 ;; ---- interp error check ---- 
 (check-exn #rx"SHEQ: An unbound identifier" (lambda () (interp (IdC 'x) '())))
-(check-exn #rx"SHEQ: PrimV \\+ expected 2 numbers" (lambda () (interp (AppC (IdC '+) (list (IdC '-) (NumC 4))) top-env)))
+(check-exn #rx"SHEQ: PrimV \\+ expected 2 numbers"
+           (lambda () (interp (AppC (IdC '+) (list (IdC '-) (NumC 4))) top-env)))
 (check-exn #rx"SHEQ: Divide by zero error" (lambda () (interp (AppC (IdC '/) (list (NumC 5) (NumC 0))) top-env)))
 (check-exn #rx"SHEQ: If expected boolean test" (lambda () (interp (parse '{if 32 23 32}) top-env))) 
 
@@ -469,16 +476,17 @@
 (check-equal? (parse '{double x 2}) (AppC (IdC 'double) (list (IdC 'x) (NumC 2))))
 (check-equal? (parse '{ifleq0? 5 x y}) (AppC (IdC 'ifleq0?) (list (NumC 5) (IdC 'x) (IdC 'y))))
 (check-equal? (parse '{let {[x = 5] [y = {* 7 8}]} in {+ x y} end}) 
-			  (AppC 
-				(LamC (list 'x 'y) (AppC (IdC '+) (list (IdC 'x) (IdC 'y)))) 
-				(list (NumC 5) 
-				  (AppC (IdC '*) (list (NumC 7) (NumC 8)))))) 
+              (AppC 
+               (LamC (list 'x 'y) (AppC (IdC '+) (list (IdC 'x) (IdC 'y)))) 
+               (list (NumC 5) 
+                     (AppC (IdC '*) (list (NumC 7) (NumC 8)))))) 
 
 ;; ---- interp Tests ----
 (check-equal? (interp (AppC (LamC '(x) (AppC (IdC '+) (list (IdC 'x) (NumC 1))))
                             (list (NumC 5))) top-env) 6)
 
-(check-equal? (interp (IfC (AppC (IdC 'equal?) (list (NumC 81) (NumC 81))) (IdC 'true) (IdC 'false)) top-env) #t)
+(check-equal? (interp (IfC (AppC (IdC 'equal?) (list (NumC 81) (NumC 81)))
+                           (IdC 'true) (IdC 'false)) top-env) #t)
 
 (check-exn #rx"SHEQ: Incorrect number of arguments"
            (lambda ()
@@ -502,15 +510,15 @@
 (check-exn #rx"SHEQ: Syntax error, unexpected reserved keyword, got" (lambda () (parse '=)))
 
 (check-equal? (top-interp 
-				'{let {[x = 5]
-					   [y = {+ 8 9}]}
-				  in
-				  {+ x {* y {let {[x = 3]}
-							 in
-							 {+ x x}
-							 end}}}
-				  end
-				 }) "107")
+               '{let {[x = 5]
+                      [y = {+ 8 9}]}
+                  in
+                  {+ x {* y {let {[x = 3]}
+                              in
+                              {+ x x}
+                              end}}}
+                  end
+                  }) "107")
 
 
 ;; ---- Helper Tests ----
