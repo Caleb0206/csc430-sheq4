@@ -4,20 +4,18 @@
 ;; SHEQ4
 ;; Fully finished implementation of SHEQ4.
 
-
-
 ;; Data definitions
 
-;; Value - Numbers and Booleans
+;; Value - Numbers, Booleans, String, CloV, PrimV
 (define-type Value (U Real Boolean String CloV PrimV))
 
-;; CloV - Closures
+;; CloV - Closures contain list of symbol params, body of ExprC, Env
 (struct CloV ([params : (Listof Symbol)] [body : ExprC] [env : Env]) #:transparent)
 
-;; PrimV - Primitive Value types
+;; PrimV - Primitive Value types (a symbol)
 (struct PrimV ([op : Symbol]) #:transparent)
 
-;; LamC - Lambdas
+;; LamC - Lambdas contain a list of symbol args, and a body of ExprC
 (struct LamC ([args : (Listof Symbol)] [body : ExprC]) #:transparent)
 
 ;; Binding : pair of a Symbol and a Value
@@ -26,7 +24,7 @@
 ;; Env : a list of Bindings
 (define-type Env (Listof Binding))
 
-;; ExprC type : NumC, BinOpC, IfC, IdC, AppC
+;; ExprC type : NumC, IfC, IdC, AppC, LamC, StringC
 (define-type ExprC (U NumC IfC IdC AppC LamC StringC))
 
 ;; NumC : a Real
@@ -62,7 +60,6 @@
                  (Binding 'strlen (PrimV 'strlen))
                  (Binding 'error (PrimV 'error))))
 
-
 ;; reserved-keywords - a list of key-words
 (define reserved-keywords '(if lambda let = in end : else))
 
@@ -71,6 +68,51 @@
 ;; top-interp - called to parse and evaluate the S-exp, return Real
 (define (top-interp [s : Sexp]) : String
   (serialize (interp (parse s) top-env)))
+
+;; interp - takes the complete AST (ExprC) with an Env, returning a Value
+(define (interp [e : ExprC] [env : Env]) : Value
+  ; template
+  #;(match e
+      [numc -> number]
+      [stringc -> s]
+      [ifc -> eval if expr]
+      [LamC -> CloV params body env]
+      [AppC -> interp CloV or PrimV]
+      [Idc -> get binding])
+
+  ; body
+  (match e
+    [(NumC n) n]
+    [(StringC s) s]
+    [(IfC v if-t if-f)
+     (define test-val (interp v env))
+     (cond
+       [(boolean? test-val)
+        (if test-val
+            (interp if-t env)
+            (interp if-f env))]
+       [else (error 'interp "SHEQ: If expected boolean test, got ~a" test-val)])]
+    [(LamC params body) (CloV params body env)]
+    [(AppC lam args)
+     (define f-val (interp lam env))
+     (define arg-vals
+       (for/list : (Listof Value) ([a args])
+         (interp a env)))
+     (cond
+       [(CloV? f-val)
+        (if (equal? (length arg-vals) (length (CloV-params f-val)))
+            (interp (CloV-body f-val)
+                    (append (map Binding (CloV-params f-val) arg-vals)
+                            (CloV-env f-val)))
+            (error 'interp "SHEQ: Incorrect number of arguments for CloV, got ~a expected ~a"
+                   (length (CloV-params f-val))
+                   (length arg-vals)))]
+        
+       [(PrimV? f-val)
+        (interp-prim f-val arg-vals)]
+       [else
+        (error 'interp "SHEQ: Attempted to apply non function value ~a" f-val)])]         
+    [(IdC id) (get-binding-val id env)]))
 
 ;; interp-prim - takes a PrimV and a list of Values, returns a Value
 (define (interp-prim [p : PrimV] [args : (Listof Value)]) : Value
@@ -149,75 +191,7 @@
     [_
      (error 'interp-prim "SHEQ: Invalid PrimV op, got ~a" args)]))
 
-
-;; interp - takes the complete AST (ExprC) with a list of FundefC, returning a Real
-(define (interp [e : ExprC] [env : Env]) : Value
-  ; template
-  #;(match e
-      [numc -> number]
-      [ifc -> eval if expr]
-      [binop -> eval binop]
-      [application -> interp folded function]
-      [idc -> throw error at unbound value])
-
-  ; body
-  (match e
-    [(NumC n) n]
-    [(StringC s) s]
-    [(IfC v if-t if-f)
-     (define test-val (interp v env))
-     (cond
-       [(boolean? test-val)
-        (if test-val
-            (interp if-t env)
-            (interp if-f env))]
-       [else (error 'interp "SHEQ: If expected boolean test, got ~a" test-val)])]
-    [(LamC params body) (CloV params body env)]
-    [(AppC lam args)
-     (define f-val (interp lam env))
-     (define arg-vals
-       (for/list : (Listof Value) ([a args])
-         (interp a env)))
-     (cond
-       [(CloV? f-val)
-        (if (equal? (length arg-vals) (length (CloV-params f-val)))
-            (interp (CloV-body f-val)
-                    (append (map Binding (CloV-params f-val) arg-vals)
-                            (CloV-env f-val)))
-            (error 'interp "SHEQ: Incorrect number of arguments for CloV, got ~a expected ~a"
-                   (length (CloV-params f-val))
-                   (length arg-vals)))]
-        
-       [(PrimV? f-val)
-        (interp-prim f-val arg-vals)]
-       [else
-        (error 'interp "SHEQ: Attempted to apply non function value ~a" f-val)])]         
-    [(IdC id) (get-binding-val id env)]))
-
-
-;; serialize - takes a Value and returns a serialized String
-(define (serialize [v : Value]) : String
-  (match v
-    [(? real? r) (~v r)]
-    [(? boolean? b) (if b
-                        "true"
-                        "false")]
-    [(? string? s) (~v s)]
-    [(CloV _ _ _) "#<procedure>"]
-    [(PrimV _) "#<primop>"]))
-
-
-;; get-binding-val takes a symbol and enviornment, performs a lookup and returns an ExprC if found
-(define (get-binding-val [s : Symbol] [env : Env]) : Value
-  (match env
-    ['() (error 'get-binding "SHEQ: An unbound identifier ~a" s)]
-    [(cons (Binding name val) r)
-     (if (equal? s name)
-         val
-         (get-binding-val s r))]))
-
-
-;; ---- Parsers ---- 
+;; ---- Parser ---- 
 ;; parse - takes a S-exp and returns concrete syntax in ExprC format
 (define (parse [e : Sexp]) : ExprC
   ; template
@@ -264,7 +238,28 @@
      (AppC (parse f) (for/list : (Listof ExprC) ([a args]) (parse a)))]
     [other (error 'parse "SHEQ: Syntax error, got ~e" other)]))
 
+
+;; serialize - takes a Value and returns a serialized String
+(define (serialize [v : Value]) : String
+  (match v
+    [(? real? r) (~v r)]
+    [(? boolean? b) (if b
+                        "true"
+                        "false")]
+    [(? string? s) (~v s)]
+    [(CloV _ _ _) "#<procedure>"]
+    [(PrimV _) "#<primop>"]))
+
 ;; ---- Helper functions ----
+
+;; get-binding-val takes a symbol and enviornment, performs a lookup and returns an ExprC if found
+(define (get-binding-val [s : Symbol] [env : Env]) : Value
+  (match env
+    ['() (error 'get-binding "SHEQ: An unbound identifier ~a" s)]
+    [(cons (Binding name val) r)
+     (if (equal? s name)
+         val
+         (get-binding-val s r))]))
 
 ;; distinct-args? - returns true if every symbol in args is distinct 
 (define (distinct-args? [args : (Listof Symbol)]) : Boolean
@@ -277,7 +272,7 @@
       #t
       #f))
 
-;; create-env 
+;; create-env - takes Listof Symbol, Lisfof Value, an Env, and returns a new Env
 (define (create-env [args : (Listof Symbol)] [vals : (Listof Value)] [env : Env]) : Env
   (match* (args vals)
     [('() '()) env]
@@ -286,7 +281,8 @@
     [((cons fa ra) (cons fv rv))
      (create-env ra rv (cons (Binding fa fv) env))]))
 
-;; ---- Tests
+
+;; ---- Tests ----
 
 ;; Large test
 ; The program calculates two areas using two different functions, and then compares them.
@@ -295,11 +291,11 @@
                let
                   {[square = {lambda (x) : {* x x}}]
                    [area = {lambda (w h) : {* w h}}]
-                   [gt = {lambda (v1 v2 t f) : {if {<= v1 v2} t f}}]}
+                   [gt = {lambda (v1 v2 t f) : {if {<= v1 v2} 1 0}}]}
                 in
                 {gt {square 4} {area 4 3} 0 1}
                 end})
-(check-equal? (top-interp prog) "1")
+(check-equal? (top-interp prog) "0")
 
 ;; ---- top-interp Tests ----
 (check-equal? (top-interp '{+ 3 2}) "5")
