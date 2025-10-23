@@ -12,7 +12,7 @@
 ;; CloV - Closures contain list of symbol params, body of ExprC, Env
 (struct CloV ([params : (Listof Symbol)] [body : ExprC] [env : Env]) #:transparent)
 
-;; PrimV - Primitive Value types (a symbol)
+;; PrimV - Represents a primitive operator by its symbol
 (struct PrimV ([op : Symbol]) #:transparent)
 
 ;; LamC - Lambdas contain a list of symbol args, and a body of ExprC
@@ -39,11 +39,8 @@
 ;; IfC : an if statement of ExprC, and ExprC's to act on if true or false
 (struct IfC ([v : ExprC] [iftrue : ExprC] [iffalse : ExprC]) #:transparent)
 
-;; AppC : a name (symbol) with a list of ExprC's
+;; AppC : Represents a function application.function ExprC with a list of arg ExprC's
 (struct AppC ([expr : ExprC] [args : (Listof ExprC)]) #:transparent)
-
-;; FundefC : a function definition
-(struct FundefC ([name : Symbol] [args : (Listof Symbol)] [body : ExprC]) #:transparent)
 
 ;; Top level environment
 (: top-env Env)
@@ -65,7 +62,7 @@
 
 ;; ---- Interpreters ----
 
-;; top-interp - called to parse and evaluate the S-exp, return Real
+;; top-interp - Parse and evaluate the S-exp, return a serialized String result
 (define (top-interp [s : Sexp]) : String
   (serialize (interp (parse s) top-env)))
 
@@ -192,7 +189,7 @@
      (error 'interp-prim "SHEQ: Invalid PrimV op, got ~a" args)]))
 
 ;; ---- Parser ---- 
-;; parse - takes a S-exp and returns concrete syntax in ExprC format
+;; parse - takes a S-exp and returns concrete syntax in ExprC AST
 (define (parse [e : Sexp]) : ExprC
   ; template
   #;(match e
@@ -266,13 +263,12 @@
   (not (check-duplicates args)))
 
 ;; reserved-symbol? - Determines if a given symbol is in the reserved keywords
-;; (+, -, /, *, def, ifleq0?, :) 
 (define (reserved-symbol? [s : Symbol]) : Boolean
   (if (memq s reserved-keywords)
       #t
       #f))
 
-;; create-env - takes Listof Symbol, Lisfof Value, an Env, and returns a new Env
+;; create-env - takes Listof Symbol, Listof Value, an Env, and returns a new Env
 (define (create-env [args : (Listof Symbol)] [vals : (Listof Value)] [env : Env]) : Env
   (match* (args vals)
     [('() '()) env]
@@ -425,7 +421,7 @@
 (check-exn #rx"SHEQ: Syntax error, unexpected reserved keyword, got" (lambda () (parse '=)))
 
 
-;; ---- intper-prim Tests ----
+;; ---- intperp-prim Tests ----
 ;; PrimV '+ tests
 (check-equal? (interp-prim (PrimV '+) (list 8 9)) 17)
 (check-exn #rx"SHEQ: PrimV \\+ expected 2 numbers, got" (lambda () (interp-prim (PrimV '+) (list 8 #t))))
