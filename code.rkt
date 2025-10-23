@@ -2,7 +2,7 @@
 (require typed/rackunit)
 
 ;; SHEQ4
-;; Status check here
+;; Fully finished implementation of SHEQ4.
 
 
 
@@ -61,6 +61,16 @@
                  (Binding 'substring (PrimV 'substring))
                  (Binding 'strlen (PrimV 'strlen))
                  (Binding 'error (PrimV 'error))))
+
+
+;; reserved-keywords - a list of key-words
+(define reserved-keywords '(if lambda let = in end : else))
+
+;; ---- Interpreters ----
+
+;; top-interp - called to parse and evaluate the S-exp, return Real
+(define (top-interp [s : Sexp]) : String
+  (serialize (interp (parse s) top-env)))
 
 ;; interp-prim - takes a PrimV and a list of Values, returns a Value
 (define (interp-prim [p : PrimV] [args : (Listof Value)]) : Value
@@ -140,67 +150,6 @@
      (error 'interp-prim "SHEQ: Invalid PrimV op, got ~a" args)]))
 
 
-;; ---- Keywords & Internal Functions
-
-;; a list of key-words
-(define reserved-keywords '(if lambda let = in end : else))
-
-
-;; ---- Interpreters ----
-
-;; top-interp - called to parse and evaluate the S-exp, return Real
-(define (top-interp [s : Sexp]) : String
-  (serialize (interp (parse s) top-env)))
-
-
-
-;; num-value - takes a Value, if Real, returns Real
-(define (num-value [v : Value]) : Real
-  (if (real? v) v
-      (error 'num-value "SHEQ: Expected a Real, got ~a" v)))
-
-(check-equal? (num-value 8) 8)
-(check-exn #rx"SHEQ: Expected a" (lambda () (num-value #f)))
-
-;; serialize - takes a Value and returns a serialized String
-(define (serialize [v : Value]) : String
-  (match v
-    [(? real? r) (~v r)]
-    [(? boolean? b) (if b
-                        "true"
-                        "false")]
-    [(? string? s) (~v s)]
-    [(CloV _ _ _) "#<procedure>"]
-    [(PrimV _) "#<primop>"]))
-
-(check-equal? (serialize '32) "32")
-(check-equal? (serialize #f) "false")
-(check-equal? (serialize #t) "true")
-(check-equal? (serialize (CloV '(x) (NumC 34) top-env)) "#<procedure>")
-(check-equal? (serialize (PrimV '<=)) "#<primop>")
-
-(check-exn #rx"SHEQ: user-error true" (lambda () (interp-prim (PrimV 'error) (list #t))))
-;;
-#; (define (interp-args [args : (Listof ExprC)] [env : Env] [bindings : (Listof Binding)]) : (Listof Binding)
-     (match args
-       ['() '()]
-       [(cons arg r) (cons (Binding arg (interp arg)))]
-       [_ (error 'interp-args "SHEQ: idk yet")]))
-
-
-
-;; get-binding-val takes a symbol and enviornment, performs a lookup and returns an ExprC if found
-(define (get-binding-val [s : Symbol] [env : Env]) : Value
-  (match env
-    ['() (error 'get-binding "SHEQ: An unbound identifier ~a" s)]
-    [(cons (Binding name val) r)
-     (if (equal? s name)
-         val
-         (get-binding-val s r))]))
-
-(check-equal? (get-binding-val 'sym (list (Binding 'sym 5))) 5)
-(check-exn #rx"SHEQ: An unbound identifier" (lambda () (get-binding-val 'sym '())))
-
 ;; interp - takes the complete AST (ExprC) with a list of FundefC, returning a Real
 (define (interp [e : ExprC] [env : Env]) : Value
   ; template
@@ -246,12 +195,26 @@
     [(IdC id) (get-binding-val id env)]))
 
 
-;; reserved-symbol? - Determines if a given symbol is in the reserved keywords
-;; (+, -, /, *, def, ifleq0?, :) 
-(define (reserved-symbol? [s : Symbol]) : Boolean
-  (if (memq s reserved-keywords)
-      #t
-      #f))
+;; serialize - takes a Value and returns a serialized String
+(define (serialize [v : Value]) : String
+  (match v
+    [(? real? r) (~v r)]
+    [(? boolean? b) (if b
+                        "true"
+                        "false")]
+    [(? string? s) (~v s)]
+    [(CloV _ _ _) "#<procedure>"]
+    [(PrimV _) "#<primop>"]))
+
+
+;; get-binding-val takes a symbol and enviornment, performs a lookup and returns an ExprC if found
+(define (get-binding-val [s : Symbol] [env : Env]) : Value
+  (match env
+    ['() (error 'get-binding "SHEQ: An unbound identifier ~a" s)]
+    [(cons (Binding name val) r)
+     (if (equal? s name)
+         val
+         (get-binding-val s r))]))
 
 
 ;; ---- Parsers ---- 
@@ -301,15 +264,18 @@
      (AppC (parse f) (for/list : (Listof ExprC) ([a args]) (parse a)))]
     [other (error 'parse "SHEQ: Syntax error, got ~e" other)]))
 
-(check-equal? (parse '{if {<= 3 90} 3 90}) (IfC (AppC (IdC '<=) (list (NumC 3) (NumC 90))) (NumC 3) (NumC 90)))
-
 ;; ---- Helper functions ----
-
 
 ;; distinct-args? - returns true if every symbol in args is distinct 
 (define (distinct-args? [args : (Listof Symbol)]) : Boolean
   (not (check-duplicates args)))
 
+;; reserved-symbol? - Determines if a given symbol is in the reserved keywords
+;; (+, -, /, *, def, ifleq0?, :) 
+(define (reserved-symbol? [s : Symbol]) : Boolean
+  (if (memq s reserved-keywords)
+      #t
+      #f))
 
 ;; create-env 
 (define (create-env [args : (Listof Symbol)] [vals : (Listof Value)] [env : Env]) : Env
@@ -319,13 +285,6 @@
     [(_ '()) (error "SHEQ: too few values were passed in application ~a ~a" args vals)]
     [((cons fa ra) (cons fv rv))
      (create-env ra rv (cons (Binding fa fv) env))]))
-
-(check-equal? (create-env (list 'a) (list 5) (list (Binding 'random 314)))
-              (list (Binding 'a 5) (Binding 'random 314)))
-(check-exn #rx"SHEQ: too many values were passed in application"
-           (lambda () (create-env (list 'a) (list 5 3 4) (list (Binding 'random 314)))))
-(check-exn #rx"SHEQ: too few values were passed in application"
-           (lambda () (create-env (list 'a 'x) (list 4) (list (Binding 'random 314)))))
 
 ;; ---- Tests
 
@@ -391,13 +350,14 @@
 (check-exn #rx"SHEQ: Divide by zero error" (lambda () (interp (AppC (IdC '/) (list (NumC 5) (NumC 0))) top-env)))
 (check-exn #rx"SHEQ: If expected boolean test" (lambda () (interp (parse '{if 32 23 32}) top-env))) 
 
+;; ---- serialize tests ----
+(check-equal? (serialize '32) "32")
+(check-equal? (serialize #f) "false")
+(check-equal? (serialize #t) "true")
+(check-equal? (serialize (CloV '(x) (NumC 34) top-env)) "#<procedure>")
+(check-equal? (serialize (PrimV '<=)) "#<primop>")
 
-;; ---- Recursion Test ----
-(define reProg '{
-                 {def minusTil0 (x) : {ifleq0? x x {minusTil0  {- x 10}}}}
-              
-                 {def main () : {minusTil0 15}}
-                 })
+(check-exn #rx"SHEQ: user-error true" (lambda () (interp-prim (PrimV 'error) (list #t))))
 
 ;; ---- parse Tests ----
 
@@ -413,6 +373,8 @@
                (LamC (list 'x 'y) (AppC (IdC '+) (list (IdC 'x) (IdC 'y)))) 
                (list (NumC 5) 
                      (AppC (IdC '*) (list (NumC 7) (NumC 8))))))
+(check-equal? (parse '{if {<= 3 90} 3 90}) (IfC (AppC (IdC '<=) (list (NumC 3) (NumC 90))) (NumC 3) (NumC 90)))
+
 
 ;; parse errors
 (check-exn #rx"SHEQ: Lambda args list is invalid, duplicate parameters found"
@@ -527,3 +489,15 @@
 ;; reserved-symbol tests
 (check-equal? (reserved-symbol? 'lambda) #t)
 (check-equal? (reserved-symbol? '+++) #f)
+
+;; create-env tests
+(check-equal? (create-env (list 'a) (list 5) (list (Binding 'random 314)))
+              (list (Binding 'a 5) (Binding 'random 314)))
+(check-exn #rx"SHEQ: too many values were passed in application"
+           (lambda () (create-env (list 'a) (list 5 3 4) (list (Binding 'random 314)))))
+(check-exn #rx"SHEQ: too few values were passed in application"
+           (lambda () (create-env (list 'a 'x) (list 4) (list (Binding 'random 314)))))
+
+;; get-binding tests
+(check-equal? (get-binding-val 'sym (list (Binding 'sym 5))) 5)
+(check-exn #rx"SHEQ: An unbound identifier" (lambda () (get-binding-val 'sym '())))
