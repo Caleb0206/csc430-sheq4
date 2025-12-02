@@ -26,12 +26,6 @@ pub struct PrimV {
     pub op: String
 }
 
-// LamC - Lambdas contain a list of symbol args, and a body of ExprC
-#[derive(Debug, Clone)]
-pub struct LamC {
-    pub args : Vec<String>,
-    pub body : Box<ExprC>
-}
 // Binding : pair of a Symbol and a Value
 #[derive(Debug, Clone)]
 pub struct Binding {
@@ -86,8 +80,38 @@ pub struct AppC {
     pub args : Vec<Box<ExprC>>
 }
 
+// LamC - Lambdas contain a list of symbol args, and a body of ExprC
+#[derive(Debug, Clone)]
+pub struct LamC {
+    pub args : Vec<String>,
+    pub body : Box<ExprC>
+}
+
 // reserved-keywords - a list of key-words
 const RESERVED_KEYWORDS: [&str; 7] = ["if", "lambda", "let", "=", "in", "end", "else"];
+
+// get_binding_val takes a symbol and enviornment, performs a lookup and returns a Value if found
+fn get_binding_val(name: String, env: Env) -> Value {
+    for binding in env {
+        if binding.name == name 
+        {
+            return *binding.val
+        }
+    }
+    panic!("SHEQ: unbound identifier '{}'", name);
+}   
+
+// interp - takes the complete AST (ExprC) with an Env, returning a Value
+fn interp(e: ExprC, env: Env) -> Value {
+    match e {
+        ExprC::NumC(NumC {n}) => Value::Real(n),
+        ExprC::StringC(StringC {s}) => Value::String(s),
+        ExprC::IdC(IdC {name}) => get_binding_val(name, env),
+        ExprC::IfC(IfC {v, iftrue, iffalse}) => todo!(),
+        ExprC::AppC(AppC {expr, args}) => todo!(),
+        ExprC::LamC(LamC {args, body}) => todo!()
+    }
+}
 
 fn main() {
     let top_env: Env = vec![
@@ -104,5 +128,8 @@ fn main() {
         Binding { name: "error".into(), val: Box::new(Value::PrimV(PrimV { op: "error".into() })) },
     ];
 
+    println!("{:?}", interp(ExprC::IdC(IdC {name : "+".into()}), top_env));
+
     println!("Hello world!");
 }
+
