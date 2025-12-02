@@ -1,5 +1,5 @@
 // SHEQ4
-// Fully finished implementation of SHEQ4.
+// WIP implementation of SHEQ4.
 
 // Data definitions
 
